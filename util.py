@@ -693,10 +693,6 @@ def eval_dicts(gold_dict, pred_dict : Dict, no_answer):
         paraphrase_id = gold_dict[key]["paraphrase_id"]
         paraphrase_number = int(paraphrase_id.split("_")[1])
 
-        if paraphrase_number > 0:
-            to_pop_set.add(key)
-            continue
-
         # this is a paraphrase and there is no original answer, so we throw away
         if paraphrase_number > 0 and gold_has_no_answer:
             to_pop_set.add(key)
@@ -708,22 +704,32 @@ def eval_dicts(gold_dict, pred_dict : Dict, no_answer):
             best_val[uuid] = tuple
             continue
 
-        # otherwise, get the previously stored value
-        old_key, old_val, old_paraphrase_id = best_val[uuid]
+        # otherwise, get the previously stored value and do some work
+        old_tuple = best_val[uuid]
+        old_key, old_f1_val, old_paraphrase_id = old_tuple
 
-
-        if f1_val > old_val:
+        # update the dict
+        if f1_val > old_f1_val:
             best_val[uuid] = tuple
             to_pop_set.add(old_key)
+        else:
+            to_pop_set.add(key)
 
-            if int(key) > int(old_key):         # the original prediction is always the lowest key
-                print("Found a better f1 score than original question!")
-                corr_answer1 = gold_dict[old_key]["answers"]
-                corr_answer2 = gold_dict[key]["answers"]
-                prev_answer = pred_dict[old_key]
-                print(f"Correct answers should match: \n\t{corr_answer1}\n\t{corr_answer2}")
-                print(f"Prev answer {old_paraphrase_id}, f1: {old_val}:\t {prev_answer}")
-                print(f"New answer {paraphrase_id}, f1: {f1_val}:\t {prediction}")
+        better_tuple = (tuple if tuple[1] > old_tuple[1] else old_tuple)
+        worse_tuple = (tuple if tuple[1] < old_tuple[1] else old_tuple)
+
+        if int(better_tuple[0]) > int(worse_tuple[0]):         # the original prediction is always the lowest key
+            better_key, better_f1, better_id = better_tuple
+            worse_key, worse_f1, worse_id = worse_tuple
+
+            print("Found a better f1 score than original question!")
+            corr_answer1 = gold_dict[worse_key]["answers"]
+            corr_answer2 = gold_dict[better_key]["answers"]
+            worse_answer = pred_dict[worse_key]
+            better_answer = pred_dict[better_key]
+            print(f"Correct answers should match: \n\t{corr_answer1}\n\t{corr_answer2}")
+            print(f"Prev answer {worse_id}, f1: {worse_f1}:\t {worse_answer}")
+            print(f"New answer {better_id}, f1: {better_f1}:\t {better_answer}")
 
 
     # Condense down to the final set with dupes removed
