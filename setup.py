@@ -169,7 +169,7 @@ def process_file(filename, data_type, word_counter, char_counter):
                                    "ques_chars": ques_chars,
                                    "y1s": y1s,
                                    "y2s": y2s,
-                                   "id": total}                         # id: total used to index the eval_examples (CHANGED)
+                                   "id": total}                         # id: total used to index the eval_examples (new)
                                 # uuid not needed because accessed from eval_examples
                         examples.append(example)
 

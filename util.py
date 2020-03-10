@@ -710,8 +710,8 @@ def eval_dicts(gold_dict, pred_dict : Dict, no_answer):
             to_pop_set.add(old_key)
 
             if int(key) > int(old_key):         # the original prediction is always the lowest key
+                print("Found a better f1 score than original question!")
                 if iter < max_iter:
-                    print("Found a better f1 score than original question!")
                     corr_answer1 = gold_dict[old_key]["answers"]
                     corr_answer2 = gold_dict[key]["answers"]
                     prev_answer = pred_dict[old_key]
@@ -733,6 +733,8 @@ def eval_dicts(gold_dict, pred_dict : Dict, no_answer):
         f1 += metric_max_over_ground_truths(compute_f1, prediction, ground_truths)
         if no_answer:
             avna += compute_avna(prediction, ground_truths)
+
+    print(f"Processed {total} values after popping")
 
     eval_dict = {'EM': 100. * em / total,
                  'F1': 100. * f1 / total}

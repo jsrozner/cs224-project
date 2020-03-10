@@ -66,10 +66,12 @@ def main(args):
     nll_meter = util.AverageMeter()
     pred_dict = {}  # Predictions for TensorBoard
     sub_dict = {}   # Predictions for submission
-    uuid_dict = {}  # Dict for deduping
+
+    # Eval file - the eval_examples from setup.py => gold_dict
     eval_file = vars(args)[f'{args.split}_eval_file']
     with open(eval_file, 'r') as fh:
         gold_dict = json_load(fh)
+
     with torch.no_grad(), \
             tqdm(total=len(dataset)) as progress_bar:
         for cw_idxs, cc_idxs, qw_idxs, qc_idxs, y1, y2, ids in data_loader:
