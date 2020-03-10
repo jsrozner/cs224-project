@@ -690,23 +690,26 @@ def eval_dicts(gold_dict, pred_dict : Dict, no_answer):
         # extra setup
         uuid = gold_dict[key]["uuid"]   # for deduping paraphrased questions, take max over all
         gold_has_no_answer = (len(gold_dict[key]["answers"]) == 0)
-        paraphrase_number = int(gold_dict[key]["paraphrase_id"].split("_")[1])
+        paraphrase_id = gold_dict[key]["paraphrase_id"]
+        paraphrase_number = int(paraphrase_id.split("_")[1])
 
-        # omit paraphrase consideration when there is no original answer
+        # this is a paraphrase and there is no original answer, so we throw away
         if paraphrase_number > 0 and gold_has_no_answer:
             to_pop_set.add(key)
             continue
 
+        tuple = (key, f1_val, paraphrase_id)
         # otherwise always store the best value (unless it was a paraphrase with no question)
         if best_val.get(uuid) is None:
-            best_val[uuid] = (key, f1_val)
+            best_val[uuid] = tuple
             continue
 
         # otherwise, get the previously stored value
-        old_key, old_val = best_val[uuid]
+        old_key, old_val, old_paraphrase_id = best_val[uuid]
+
 
         if f1_val > old_val:
-            best_val[uuid] = (key, f1_val)
+            best_val[uuid] = tuple
             to_pop_set.add(old_key)
 
             if int(key) > int(old_key):         # the original prediction is always the lowest key
@@ -715,8 +718,8 @@ def eval_dicts(gold_dict, pred_dict : Dict, no_answer):
                 corr_answer2 = gold_dict[key]["answers"]
                 prev_answer = pred_dict[old_key]
                 print(f"Correct answers should match: \n\t{corr_answer1}\n\t{corr_answer2}")
-                print(f"Prev answer, f1: {old_val}:\t {prev_answer}")
-                print(f"New answer, f1: {f1_val}:\t {prediction}")
+                print(f"Prev answer {old_paraphrase_id}, f1: {old_val}:\t {prev_answer}")
+                print(f"New answer {paraphrase_id}, f1: {f1_val}:\t {prediction}")
 
 
     # Condense down to the final set with dupes removed
