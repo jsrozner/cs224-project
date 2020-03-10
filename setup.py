@@ -169,8 +169,8 @@ def process_file(filename, data_type, word_counter, char_counter):
                                    "ques_chars": ques_chars,
                                    "y1s": y1s,
                                    "y2s": y2s,
-                                   "id": total,                         # id: total used to index the eval_examples (CHANGED)
-                                   "paraphrase_id": paraphrase_id}      # new
+                                   "id": total}                         # id: total used to index the eval_examples (CHANGED)
+                                # uuid not needed because accessed from eval_examples
                         examples.append(example)
 
                         # todo: why do they use str(total) instead of just total

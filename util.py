@@ -16,6 +16,8 @@ import tqdm
 import numpy as np
 import ujson as json
 
+from typing import Dict
+
 from collections import Counter
 
 
@@ -625,10 +627,13 @@ def convert_tokens(eval_dict, qa_id, y_start_list, y_end_list, no_answer):
     """
     pred_dict = {}
     sub_dict = {}
+    map_to_uuid = {}
     for qid, y_start, y_end in zip(qa_id, y_start_list, y_end_list):
         context = eval_dict[str(qid)]["context"]
         spans = eval_dict[str(qid)]["spans"]
         uuid = eval_dict[str(qid)]["uuid"]
+
+        map_to_uuid[str(qid)] = uuid                # new: allows us to dedupe against uuid
         if no_answer and (y_start == 0 or y_end == 0):
             pred_dict[str(qid)] = ''
             sub_dict[uuid] = ''
@@ -639,7 +644,7 @@ def convert_tokens(eval_dict, qa_id, y_start_list, y_end_list, no_answer):
             end_idx = spans[y_end][1]
             pred_dict[str(qid)] = context[start_idx: end_idx]
             sub_dict[uuid] = context[start_idx: end_idx]
-    return pred_dict, sub_dict
+    return pred_dict, sub_dict, map_to_uuid
 
 
 def metric_max_over_ground_truths(metric_fn, prediction, ground_truths):
@@ -652,13 +657,39 @@ def metric_max_over_ground_truths(metric_fn, prediction, ground_truths):
     return max(scores_for_ground_truths)
 
 
-def eval_dicts(gold_dict, pred_dict, no_answer):
+def eval_dicts(gold_dict, pred_dict : Dict, uuid_dict, no_answer):
     avna = f1 = em = total = 0
+    best_val = {}
+
+    # New: run through the pred_dict and dedupe against uuid
+    # remove duplicates from the pred_dict, keeping only the best one
     for key, value in pred_dict.items():
         total += 1
         ground_truths = gold_dict[key]['answers']
         prediction = value
-        em += metric_max_over_ground_truths(compute_em, prediction, ground_truths)
+
+        #em_val = metric_max_over_ground_truths(compute_em, prediction, ground_truths)  # compute_em is a function
+        f1_val = metric_max_over_ground_truths(compute_f1, prediction, ground_truths)
+
+        # See if this is the best prediction
+        uuid = uuid_dict[key]
+        if best_val[uuid] is None:
+            best_val[uuid] = (key, f1_val)
+        else:
+            old_key = best_val[uuid][0]
+            old_val = best_val[uuid][1]
+            if f1_val > old_val:
+                best_val[uuid] = (key, f1_val)
+                pred_dict.pop(old_key)              # remove the old value from the pred_dict
+
+                if int(key) > int(old_key):         # the original prediction is always the lowest key
+                    print("Found a better f1 score than original question!")
+
+    for key, value in pred_dict.items():
+        ground_truths = gold_dict[key]['answers']
+        prediction = value
+
+        em += metric_max_over_ground_truths(compute_em, prediction, ground_truths)  # compute_em is a function
         f1 += metric_max_over_ground_truths(compute_f1, prediction, ground_truths)
         if no_answer:
             avna += compute_avna(prediction, ground_truths)

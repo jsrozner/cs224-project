@@ -66,6 +66,7 @@ def main(args):
     nll_meter = util.AverageMeter()
     pred_dict = {}  # Predictions for TensorBoard
     sub_dict = {}   # Predictions for submission
+    uuid_dict = {}  # Dict for deduping
     eval_file = vars(args)[f'{args.split}_eval_file']
     with open(eval_file, 'r') as fh:
         gold_dict = json_load(fh)
@@ -93,17 +94,18 @@ def main(args):
                 # No labels for the test set, so NLL would be invalid
                 progress_bar.set_postfix(NLL=nll_meter.avg)
 
-            idx2pred, uuid2pred = util.convert_tokens(gold_dict,
+            idx2pred, uuid2pred, map_id_to_uuid = util.convert_tokens(gold_dict,
                                                       ids.tolist(),
                                                       starts.tolist(),
                                                       ends.tolist(),
                                                       args.use_squad_v2)
             pred_dict.update(idx2pred)
             sub_dict.update(uuid2pred)
+            uuid_dict.update(map_id_to_uuid)
 
     # Log results (except for test set, since it does not come with labels)
     if args.split != 'test':
-        results = util.eval_dicts(gold_dict, pred_dict, args.use_squad_v2)
+        results = util.eval_dicts(gold_dict, pred_dict, uuid_dict, args.use_squad_v2)
         results_list = [('NLL', nll_meter.avg),
                         ('F1', results['F1']),
                         ('EM', results['EM'])]
