@@ -676,8 +676,6 @@ def eval_dicts(gold_dict, pred_dict : Dict, no_answer):
     iter = 0
     for key, value in pred_dict.items():
         iter += 1
-        if iter == max_iter:
-            break
 
         ground_truths = gold_dict[key]['answers']
         prediction = value
@@ -691,29 +689,38 @@ def eval_dicts(gold_dict, pred_dict : Dict, no_answer):
 
         # extra setup
         uuid = gold_dict[key]["uuid"]   # for deduping paraphrased questions, take max over all
-        has_no_answer = (len(gold_dict[key]["answers"]) == 0)
+        gold_has_no_answer = (len(gold_dict[key]["answers"]) == 0)
+        paraphrase_number = int(gold_dict[key]["paraphrase_id"].split("_")[1])
 
+        # omit paraphrase consideration when there is no original answer
+        if paraphrase_number > 0 and gold_has_no_answer:
+            to_pop_set.add(key)
+            continue
+
+        # otherwise always store the best value (unless it was a paraphrase with no question)
         if best_val.get(uuid) is None:
             best_val[uuid] = (key, f1_val)
-        else:
-            old_key, old_val = best_val[uuid]
-            if f1_val > old_val:
-                best_val[uuid] = (key, f1_val)
-                to_pop_set.add(old_key)
+            continue
 
-                if int(key) > int(old_key):         # the original prediction is always the lowest key
-                    if has_no_answer:               # omit no_answer questions
-                        to_pop_set.add(key)
-                    else:                           # otherwise, it's a better answer
-                        print("Found a better f1 score than original question!")
-                        corr_answer1 = gold_dict[old_key]["answers"]
-                        corr_answer2 = gold_dict[key]["answers"]
-                        prev_answer = pred_dict[old_key]
-                        print(f"Correct answers should match: \n\t{corr_answer1}\n\t{corr_answer2}")
-                        print(f"Prev answer, f1: {old_val}:\t {prev_answer}")
-                        print(f"New answer, f1: {f1_val}:\t {prediction}")
+        # otherwise, get the previously stored value
+        old_key, old_val = best_val[uuid]
+
+        if f1_val > old_val:
+            best_val[uuid] = (key, f1_val)
+            to_pop_set.add(old_key)
+
+            if int(key) > int(old_key):         # the original prediction is always the lowest key
+                if iter < max_iter:
+                    print("Found a better f1 score than original question!")
+                    corr_answer1 = gold_dict[old_key]["answers"]
+                    corr_answer2 = gold_dict[key]["answers"]
+                    prev_answer = pred_dict[old_key]
+                    print(f"Correct answers should match: \n\t{corr_answer1}\n\t{corr_answer2}")
+                    print(f"Prev answer, f1: {old_val}:\t {prev_answer}")
+                    print(f"New answer, f1: {f1_val}:\t {prediction}")
 
 
+    # Condense down to the final set with dupes removed
     for val in to_pop_set:
         pred_dict.pop(val)              # remove the old value from the pred_dict
 
