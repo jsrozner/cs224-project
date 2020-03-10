@@ -690,10 +690,10 @@ def eval_dicts(gold_dict, pred_dict : Dict, uuid_dict, no_answer):
 
                 if int(key) > int(old_key):         # the original prediction is always the lowest key
                     print("Found a better f1 score than original question!")
-                    question1 = gold_dict[old_key]["question"]
-                    question2 = gold_dict[key]["question"]
+                    corr_answer1 = gold_dict[old_key]["answers"]
+                    corr_answer2 = gold_dict[key]["answers"]
                     prev_answer = pred_dict[old_key]
-                    print(f"Questions should match: \n\t{question1}\n\t{question2}")
+                    print(f"Correct answers should match: \n\t{corr_answer1}\n\t{corr_answer2}")
                     print(f"Prev answer:\t {prev_answer}")
                     print(f"New answer:\t {prediction}")
 
