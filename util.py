@@ -711,13 +711,12 @@ def eval_dicts(gold_dict, pred_dict : Dict, no_answer):
 
             if int(key) > int(old_key):         # the original prediction is always the lowest key
                 print("Found a better f1 score than original question!")
-                if iter < max_iter:
-                    corr_answer1 = gold_dict[old_key]["answers"]
-                    corr_answer2 = gold_dict[key]["answers"]
-                    prev_answer = pred_dict[old_key]
-                    print(f"Correct answers should match: \n\t{corr_answer1}\n\t{corr_answer2}")
-                    print(f"Prev answer, f1: {old_val}:\t {prev_answer}")
-                    print(f"New answer, f1: {f1_val}:\t {prediction}")
+                corr_answer1 = gold_dict[old_key]["answers"]
+                corr_answer2 = gold_dict[key]["answers"]
+                prev_answer = pred_dict[old_key]
+                print(f"Correct answers should match: \n\t{corr_answer1}\n\t{corr_answer2}")
+                print(f"Prev answer, f1: {old_val}:\t {prev_answer}")
+                print(f"New answer, f1: {f1_val}:\t {prediction}")
 
 
     # Condense down to the final set with dupes removed
