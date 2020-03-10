@@ -25,12 +25,6 @@ from tqdm import tqdm
 from zipfile import ZipFile
 
 
-
-def get_paraphrases(question):
-    return ["The quick brown fox"]
-
-
-
 def download_url(url, output_path, show_progress=True):
     class DownloadProgressBar(tqdm):
         def update_to(self, b=1, bsize=1, tsize=None):
@@ -76,7 +70,6 @@ def download(args):
     print('Downloading spacy language model...')
     run(['python', '-m', 'spacy', 'download', 'en'])
 
-
 def word_tokenize(sent):
     doc = nlp(sent)
     return [token.text for token in doc]
@@ -100,7 +93,6 @@ def process_file(filename, data_type, word_counter, char_counter):
     examples = []
     eval_examples = {}
     total = 0
-    paraphrases_generated = 0
     with open(filename, "r") as fh:
         source = json.load(fh)
         for article in tqdm(source["data"]):
@@ -114,14 +106,16 @@ def process_file(filename, data_type, word_counter, char_counter):
                     word_counter[token] += len(para["qas"])
                     for char in token:
                         char_counter[char] += len(para["qas"])
-
-                # Parse each of the question-answer sets (qa)
                 for qa in para["qas"]:
-                    #total += 1
-                    orig_q = qa["question"].replace(
+                    total += 1
+                    ques = qa["question"].replace(
                         "''", '" ').replace("``", '" ')
-
-                    # For each qa, we parse one time the answer information
+                    ques_tokens = word_tokenize(ques)
+                    ques_chars = [list(token) for token in ques_tokens]
+                    for token in ques_tokens:
+                        word_counter[token] += 1
+                        for char in token:
+                            char_counter[char] += 1
                     y1s, y2s = [], []
                     answer_texts = []
                     for answer in qa["answers"]:
@@ -136,45 +130,20 @@ def process_file(filename, data_type, word_counter, char_counter):
                         y1, y2 = answer_span[0], answer_span[-1]
                         y1s.append(y1)
                         y2s.append(y2)
-
-                    # Handle paraphrasing (new)
-                    paraphrase_set = [orig_q]
-                    if args_.generate_dev_with_paraphrases > 0:
-                        paraphrase_set += get_paraphrases(orig_q)
-
-                    #todo:
-                    # - should we increment total above or below
-                    # - should we increment word_counter and char_counter for each question
-                    paraphrases_generated += len(paraphrase_set) - 1
-                    for j in range(len(paraphrase_set)):
-                        total += 1
-                        q = paraphrase_set[j]
-                        print(f"Paraphrased to: {q}")
-                        ques_tokens = word_tokenize(q)
-                        ques_chars = [list(token) for token in ques_tokens]
-                        for token in ques_tokens:
-                            word_counter[token] += 1
-                            for char in token:
-                                char_counter[char] += 1
-
-                        example = {"context_tokens": context_tokens,
-                                   "context_chars": context_chars,
-                                   "ques_tokens": ques_tokens,
-                                   "ques_chars": ques_chars,
-                                   "y1s": y1s,
-                                   "y2s": y2s,
-                                   "id": total}         # id: total used to index the eval_examples
-                        examples.append(example)
-
-                        paraphrase_id = qa["id"] + "_" + str(j)
-                        eval_examples[str(total)] = {"context": context,
-                                                     "question": q,
-                                                     "spans": spans,
-                                                     "answers": answer_texts,
-                                                     "uuid": qa["id"],
-                                                     "paraphrase_id": paraphrase_id}
+                    example = {"context_tokens": context_tokens,
+                               "context_chars": context_chars,
+                               "ques_tokens": ques_tokens,
+                               "ques_chars": ques_chars,
+                               "y1s": y1s,
+                               "y2s": y2s,
+                               "id": total}
+                    examples.append(example)
+                    eval_examples[str(total)] = {"context": context,
+                                                 "question": ques,
+                                                 "spans": spans,
+                                                 "answers": answer_texts,
+                                                 "uuid": qa["id"]}
         print(f"{len(examples)} questions in total")
-        print(f"{paraphrases_generated} paraphrases generated")
     return examples, eval_examples
 
 
@@ -370,15 +339,6 @@ def build_features(args, examples, data_type, out_file, word2idx_dict, char2idx_
     return meta
 
 
-
-# def file_exists_and_should_skip(filename):
-#     if not args_.skip_setup_if_exists or not os.path.exists(filename):
-#         return False
-
-    # return True
-
-
-
 def save(filename, obj, message=None):
     if message is not None:
         print(f"Saving {message}...")
@@ -419,7 +379,7 @@ if __name__ == '__main__':
     # Get command-line args
     args_ = get_setup_args()
 
-    # Download resources (only if not already downloaded)
+    # Download resources
     download(args_)
 
     # Import spacy language model
@@ -427,15 +387,10 @@ if __name__ == '__main__':
 
     # Preprocess dataset
     args_.train_file = url_to_data_path(args_.train_url)
-    args_.dev_file = url_to_data_path(args_.dev_url)            # data/dev-v2.0.json => dev_eval.json
+    args_.dev_file = url_to_data_path(args_.dev_url)
     if args_.include_test_examples:
         args_.test_file = url_to_data_path(args_.test_url)
     glove_dir = url_to_data_path(args_.glove_url.replace('.zip', ''))
     glove_ext = f'.txt' if glove_dir.endswith('d') else f'.{args_.glove_dim}d.txt'
     args_.glove_file = os.path.join(glove_dir, os.path.basename(glove_dir) + glove_ext)
-
-    # Handle paraphrasing
-    if args_.generate_dev_with_paraphrases > 0:
-        print(f"Running with {args_.generate_dev_with_paraphrases} paraphrases...")
-
     pre_process(args_)

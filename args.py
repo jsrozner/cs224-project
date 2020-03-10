@@ -13,6 +13,15 @@ def get_setup_args():
 
     add_common_args(parser)
 
+
+    parser.add_argument('--skip_setup_if_exists',
+                        type=bool,
+                        default=False)
+
+    parser.add_argument('--generate_dev_with_paraphrases',
+                        type=int,
+                        default=0)
+
     parser.add_argument('--train_url',
                         type=str,
                         default='https://github.com/chrischute/squad/data/train-v2.0.json')

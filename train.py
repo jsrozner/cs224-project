@@ -205,4 +205,4 @@ def evaluate(model, data_loader, device, eval_file, max_len, use_squad_v2):
 
 
 if __name__ == '__main__':
-    main(get_train_args())
+    main(get_trin_args())

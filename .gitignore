@@ -2,5 +2,8 @@
 .idea/
 __pycache__
 .texpadtmp/
-data/
+data*/
 save/
+*.txt
+from_vm/
+
