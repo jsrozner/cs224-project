@@ -693,6 +693,10 @@ def eval_dicts(gold_dict, pred_dict : Dict, no_answer):
         paraphrase_id = gold_dict[key]["paraphrase_id"]
         paraphrase_number = int(paraphrase_id.split("_")[1])
 
+        if paraphrase_number > 0:
+            to_pop_set.add(key)
+            continue
+
         # this is a paraphrase and there is no original answer, so we throw away
         if paraphrase_number > 0 and gold_has_no_answer:
             to_pop_set.add(key)
