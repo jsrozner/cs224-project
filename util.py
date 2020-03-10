@@ -685,8 +685,14 @@ def eval_dicts(gold_dict, pred_dict : Dict, no_answer):
         #em_val = metric_max_over_ground_truths(compute_em, prediction, ground_truths)  # compute_em is a function
         f1_val = metric_max_over_ground_truths(compute_f1, prediction, ground_truths)
 
+        ######
         # See if this is the best prediction
-        uuid = gold_dict[key]["uuid"]
+        ######
+
+        # extra setup
+        uuid = gold_dict[key]["uuid"]   # for deduping paraphrased questions, take max over all
+        has_no_answer = (len(gold_dict[key]["answers"]) == 0)
+
         if best_val.get(uuid) is None:
             best_val[uuid] = (key, f1_val)
         else:
@@ -696,13 +702,16 @@ def eval_dicts(gold_dict, pred_dict : Dict, no_answer):
                 to_pop_set.add(old_key)
 
                 if int(key) > int(old_key):         # the original prediction is always the lowest key
-                    print("Found a better f1 score than original question!")
-                    corr_answer1 = gold_dict[old_key]["answers"]
-                    corr_answer2 = gold_dict[key]["answers"]
-                    prev_answer = pred_dict[old_key]
-                    print(f"Correct answers should match: \n\t{corr_answer1}\n\t{corr_answer2}")
-                    print(f"Prev answer, f1: {old_val}:\t {prev_answer}")
-                    print(f"New answer, f1: {f1_val}:\t {prediction}")
+                    if has_no_answer:               # omit no_answer questions
+                        to_pop_set.add(key)
+                    else:                           # otherwise, it's a better answer
+                        print("Found a better f1 score than original question!")
+                        corr_answer1 = gold_dict[old_key]["answers"]
+                        corr_answer2 = gold_dict[key]["answers"]
+                        prev_answer = pred_dict[old_key]
+                        print(f"Correct answers should match: \n\t{corr_answer1}\n\t{corr_answer2}")
+                        print(f"Prev answer, f1: {old_val}:\t {prev_answer}")
+                        print(f"New answer, f1: {f1_val}:\t {prediction}")
 
 
     for val in to_pop_set:
