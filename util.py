@@ -644,7 +644,7 @@ def convert_tokens(eval_dict, qa_id, y_start_list, y_end_list, no_answer):
             end_idx = spans[y_end][1]
             pred_dict[str(qid)] = context[start_idx: end_idx]
             sub_dict[uuid] = context[start_idx: end_idx]
-    return pred_dict, sub_dict, map_to_uuid
+    return pred_dict, sub_dict
 
 
 def metric_max_over_ground_truths(metric_fn, prediction, ground_truths):
@@ -657,7 +657,14 @@ def metric_max_over_ground_truths(metric_fn, prediction, ground_truths):
     return max(scores_for_ground_truths)
 
 
-def eval_dicts(gold_dict, pred_dict : Dict, uuid_dict, no_answer):
+def eval_dicts(gold_dict, pred_dict : Dict, no_answer):
+    """
+    :param gold_dict: the eval_examples dict from setup.py process_file
+        context, question, spans, answers, uuid, paraphrase_id
+    :param pred_dict:
+    :param no_answer:
+    :return:
+    """
     avna = f1 = em = total = 0
     best_val = {}
 
@@ -679,7 +686,7 @@ def eval_dicts(gold_dict, pred_dict : Dict, uuid_dict, no_answer):
         f1_val = metric_max_over_ground_truths(compute_f1, prediction, ground_truths)
 
         # See if this is the best prediction
-        uuid = uuid_dict[key]
+        uuid = gold_dict[key]["uuid"]
         if best_val.get(uuid) is None:
             best_val[uuid] = (key, f1_val)
         else:
@@ -694,8 +701,8 @@ def eval_dicts(gold_dict, pred_dict : Dict, uuid_dict, no_answer):
                     corr_answer2 = gold_dict[key]["answers"]
                     prev_answer = pred_dict[old_key]
                     print(f"Correct answers should match: \n\t{corr_answer1}\n\t{corr_answer2}")
-                    print(f"Prev answer:\t {prev_answer}")
-                    print(f"New answer:\t {prediction}")
+                    print(f"Prev answer, f1: {old_val}:\t {prev_answer}")
+                    print(f"New answer, f1: {f1_val}:\t {prediction}")
 
 
     for val in to_pop_set:
