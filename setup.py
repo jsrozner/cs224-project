@@ -117,7 +117,6 @@ def process_file(filename, data_type, word_counter, char_counter):
 
                 # Parse each of the question-answer sets (qa)
                 for qa in para["qas"]:
-                    #total += 1
                     orig_q = qa["question"].replace(
                         "''", '" ').replace("``", '" ')
 
@@ -141,21 +140,27 @@ def process_file(filename, data_type, word_counter, char_counter):
                     paraphrase_set = [orig_q]
                     if args_.generate_dev_with_paraphrases > 0:
                         paraphrase_set += get_paraphrases(orig_q)
+                        assert(len(paraphrase_set) == 2)
+                    paraphrases_generated += len(paraphrase_set) - 1
 
                     #todo:
                     # - should we increment total above or below
                     # - should we increment word_counter and char_counter for each question
-                    paraphrases_generated += len(paraphrase_set) - 1
+
+                    total += 1
                     for j in range(len(paraphrase_set)):
-                        total += 1
                         q = paraphrase_set[j]
-                        print(f"Paraphrased to: {q}")
+                        #print(f"Paraphrased to: {q}")
                         ques_tokens = word_tokenize(q)
                         ques_chars = [list(token) for token in ques_tokens]
-                        for token in ques_tokens:
-                            word_counter[token] += 1
-                            for char in token:
-                                char_counter[char] += 1
+
+                        # Modify the counters iff it is the first question (this enables us to re-use a
+                        # pretrained model
+                        if j == 0:
+                            for token in ques_tokens:
+                                word_counter[token] += 1
+                                for char in token:
+                                    char_counter[char] += 1
 
                         example = {"context_tokens": context_tokens,
                                    "context_chars": context_chars,
@@ -398,7 +403,10 @@ def pre_process(args):
     # Process dev and test sets
     dev_examples, dev_eval = process_file(args.dev_file, "dev", word_counter, char_counter)
     build_features(args, train_examples, "train", args.train_record_file, word2idx_dict, char2idx_dict)
+
+    # dev_examples used in build_features, which writes the npz file used to eval
     dev_meta = build_features(args, dev_examples, "dev", args.dev_record_file, word2idx_dict, char2idx_dict)
+
     if args.include_test_examples:
         test_examples, test_eval = process_file(args.test_file, "test", word_counter, char_counter)
         save(args.test_eval_file, test_eval, message="test eval")
@@ -406,13 +414,13 @@ def pre_process(args):
                                    args.test_record_file, word2idx_dict, char2idx_dict, is_test=True)
         save(args.test_meta_file, test_meta, message="test meta")
 
-    save(args.word_emb_file, word_emb_mat, message="word embedding")
-    save(args.char_emb_file, char_emb_mat, message="char embedding")
-    save(args.train_eval_file, train_eval, message="train eval")
-    save(args.dev_eval_file, dev_eval, message="dev eval")
-    save(args.word2idx_file, word2idx_dict, message="word dictionary")
+    save(args.word_emb_file, word_emb_mat, message="word embedding")    # word_emb.json
+    save(args.char_emb_file, char_emb_mat, message="char embedding")    # char_emb.json
+    save(args.train_eval_file, train_eval, message="train eval")        # train_eval.json
+    save(args.dev_eval_file, dev_eval, message="dev eval")              # dev_eval.json
+    save(args.word2idx_file, word2idx_dict, message="word dictionary")  # word2idx.json (seems not to be loaded by test)
     save(args.char2idx_file, char2idx_dict, message="char dictionary")
-    save(args.dev_meta_file, dev_meta, message="dev meta")
+    save(args.dev_meta_file, dev_meta, message="dev meta")              # dev_meta.json (not important)
 
 
 if __name__ == '__main__':
@@ -426,7 +434,7 @@ if __name__ == '__main__':
     nlp = spacy.blank("en")
 
     # Preprocess dataset
-    args_.train_file = url_to_data_path(args_.train_url)
+    args_.train_file = url_to_data_path(args_.train_url)        # data/train-v2.0.json => train.json
     args_.dev_file = url_to_data_path(args_.dev_url)            # data/dev-v2.0.json => dev_eval.json
     if args_.include_test_examples:
         args_.test_file = url_to_data_path(args_.test_url)
