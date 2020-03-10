@@ -107,11 +107,11 @@ def process_file(filename, data_type, word_counter, char_counter):
             for para in article["paragraphs"]:
                 context = para["context"].replace(
                     "''", '" ').replace("``", '" ')
-                context_tokens = word_tokenize(context)
+                context_tokens = word_tokenize(context)                     # each words
                 context_chars = [list(token) for token in context_tokens]
                 spans = convert_idx(context, context_tokens)
                 for token in context_tokens:
-                    word_counter[token] += len(para["qas"])
+                    word_counter[token] += len(para["qas"])                 # num unique QA pairs for this context
                     for char in token:
                         char_counter[char] += len(para["qas"])
 
@@ -130,8 +130,8 @@ def process_file(filename, data_type, word_counter, char_counter):
                         answer_texts.append(answer_text)
                         answer_span = []
                         for idx, span in enumerate(spans):
-                            if not (answer_end <= span[0] or answer_start >= span[1]):
-                                answer_span.append(idx)
+                            if not (answer_end <= span[0] or answer_start >= span[1]): # valid span
+                                answer_span.append(idx)                                # then store
                         y1, y2 = answer_span[0], answer_span[-1]
                         y1s.append(y1)
                         y2s.append(y2)
@@ -147,8 +147,8 @@ def process_file(filename, data_type, word_counter, char_counter):
                     # - should we increment total above or below
                     # - should we increment word_counter and char_counter for each question
 
-                    total += 1
                     for j in range(len(paraphrase_set)):
+                        total += 1
                         q = paraphrase_set[j]
                         #print(f"Paraphrased to: {q}")
                         ques_tokens = word_tokenize(q)
@@ -162,22 +162,24 @@ def process_file(filename, data_type, word_counter, char_counter):
                                 for char in token:
                                     char_counter[char] += 1
 
+                        paraphrase_id = qa["id"] + "_" + str(j)
                         example = {"context_tokens": context_tokens,
                                    "context_chars": context_chars,
                                    "ques_tokens": ques_tokens,
                                    "ques_chars": ques_chars,
                                    "y1s": y1s,
                                    "y2s": y2s,
-                                   "id": total}         # id: total used to index the eval_examples
+                                   "id": total,                         # id: total used to index the eval_examples (CHANGED)
+                                   "paraphrase_id": paraphrase_id}      # new
                         examples.append(example)
 
-                        paraphrase_id = qa["id"] + "_" + str(j)
+                        # todo: why do they use str(total) instead of just total
                         eval_examples[str(total)] = {"context": context,
                                                      "question": q,
                                                      "spans": spans,
                                                      "answers": answer_texts,
                                                      "uuid": qa["id"],
-                                                     "paraphrase_id": paraphrase_id}
+                                                     "paraphrase_id": paraphrase_id}    # new
         print(f"{len(examples)} questions in total")
         print(f"{paraphrases_generated} paraphrases generated")
     return examples, eval_examples
@@ -331,14 +333,18 @@ def build_features(args, examples, data_type, out_file, word2idx_dict, char2idx_
         ques_idx = np.zeros([ques_limit], dtype=np.int32)
         ques_char_idx = np.zeros([ques_limit, char_limit], dtype=np.int32)
 
+        # update words to their index in the embeddings
         for i, token in enumerate(example["context_tokens"]):
             context_idx[i] = _get_word(token)
         context_idxs.append(context_idx)
 
+        # update words (in question) to index in the embeddings
         for i, token in enumerate(example["ques_tokens"]):
             ques_idx[i] = _get_word(token)
         ques_idxs.append(ques_idx)
 
+        # same as above but for characters
+        # matrix indexed by (word, char in word)
         for i, token in enumerate(example["context_chars"]):
             for j, char in enumerate(token):
                 if j == char_limit:
@@ -346,6 +352,7 @@ def build_features(args, examples, data_type, out_file, word2idx_dict, char2idx_
                 context_char_idx[i, j] = _get_char(char)
         context_char_idxs.append(context_char_idx)
 
+        # same as above but for characters
         for i, token in enumerate(example["ques_chars"]):
             for j, char in enumerate(token):
                 if j == char_limit:
@@ -397,8 +404,7 @@ def pre_process(args):
     train_examples, train_eval = process_file(args.train_file, "train", word_counter, char_counter)
     word_emb_mat, word2idx_dict = get_embedding(
         word_counter, 'word', emb_file=args.glove_file, vec_size=args.glove_dim, num_vectors=args.glove_num_vecs)
-    char_emb_mat, char2idx_dict = get_embedding(
-        char_counter, 'char', emb_file=None, vec_size=args.char_dim)
+    char_emb_mat, char2idx_dict = get_embedding(char_counter, 'char', emb_file=None, vec_size=args.char_dim)
 
     # Process dev and test sets
     dev_examples, dev_eval = process_file(args.dev_file, "dev", word_counter, char_counter)

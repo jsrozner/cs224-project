@@ -15,7 +15,15 @@ from subprocess import run
 from tqdm import tqdm
 from zipfile import ZipFile
 
-from mod_setup import word_tokenize, convert_idx
+from setup import word_tokenize, convert_idx
+
+def load_json(filename):
+    #filename = sys.argv[1]
+    print(f'filename: {filename}')
+    with open(filename) as f:
+        data = json.load(f)
+
+    return data
 
 def main():
     filename = sys.argv[1]
