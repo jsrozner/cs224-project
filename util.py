@@ -663,6 +663,7 @@ def eval_dicts(gold_dict, pred_dict : Dict, uuid_dict, no_answer):
 
     # New: run through the pred_dict and dedupe against uuid
     # remove duplicates from the pred_dict, keeping only the best one
+    to_pop_set = set()
     for key, value in pred_dict.items():
         total += 1
         ground_truths = gold_dict[key]['answers']
@@ -673,17 +674,20 @@ def eval_dicts(gold_dict, pred_dict : Dict, uuid_dict, no_answer):
 
         # See if this is the best prediction
         uuid = uuid_dict[key]
-        if best_val[uuid] is None:
+        if best_val.get(uuid) is None:
             best_val[uuid] = (key, f1_val)
         else:
             old_key = best_val[uuid][0]
             old_val = best_val[uuid][1]
             if f1_val > old_val:
                 best_val[uuid] = (key, f1_val)
-                pred_dict.pop(old_key)              # remove the old value from the pred_dict
+                to_pop_set.add(old_key)
 
                 if int(key) > int(old_key):         # the original prediction is always the lowest key
                     print("Found a better f1 score than original question!")
+
+    for val in to_pop_set:
+        pred_dict.pop(val)              # remove the old value from the pred_dict
 
     for key, value in pred_dict.items():
         ground_truths = gold_dict[key]['answers']
