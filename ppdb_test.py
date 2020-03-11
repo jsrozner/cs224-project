@@ -155,22 +155,26 @@ class PPDBE(PPDB):
     def gen_paraphrase_questions(self, num_replacement, num_paraphrases):
 
         n_paraphrases = self.get_n_paraphrases(num_paraphrases)
-        paraphrases = []
+        paraphrases = {}
 
         cnt = 0
         i = 0
         while cnt <= num_replacement:
-            for token, idx in enumerate(self.tokens):
+            for idx, token in enumerate(self.tokens):
                 p = 0
                 if token in n_paraphrases.keys():
                     while p < len(n_paraphrases[token]):
-                        paraphrases[i] = self.tokens
-                        paraphrases[i][idx] = n_paraphrases[token][p]
+                        tokens = list(self.tokens)
+                        tokens[idx] = list(n_paraphrases[token])[p]
+                        paraphrases[i] = tokens
                         p += 1
                         i += 1
                     cnt += 1
 
-        return paraphrases
+        paraphrase_list = []
+        for id, sentence in paraphrases.items():
+            paraphrase_list.append(" ".join(sentence))
+        return paraphrase_list
 
 
 if __name__ == "__main__":
@@ -183,5 +187,5 @@ if __name__ == "__main__":
     ppdb = PPDBE(vocab, lexicon, isTxt=True)
     ppdb.read_lexicon()
     # ppdb.save_ppdb()
-    print(ppdb.get_n_paraphrases(3))
-    # print(ppdb.ppdb_paraphrases)
+    print(ppdb.gen_paraphrase_questions(2, 3))
+
