@@ -38,7 +38,7 @@ def string_clean(words):
 
 
 ############ THIS IS THE PPDB-BASED PARAPHRASE GENERATOR !!!! ###########
-class PPDB_dict(object):
+class PPDB_dict_wrapper(object):
     def __init__(self, ppdb_file):
         print(f"creating a ppdb dict from {ppdb_file}")
         self.ppdb_dict = dict()
@@ -75,7 +75,8 @@ class PPDB_dict(object):
 
 
 class PPDB(object):
-    def __init__(self, sentence, ppdb_dict : PPDB_dict, isTxt = True):
+    def __init__(self, sentence, ppdb_dict : PPDB_dict_wrapper, isTxt = False):
+        print(f"Creating a paraphrase generator for {sentence}")
         self.sentence = sentence
         self.ppdb_dict_wrapper = ppdb_dict
         self.ppdb_paraphrases = dict()
@@ -115,36 +116,34 @@ class PPDB(object):
                         f_save.flush()
 
 
-    def get_n_paraphrases(self, num_paraphrases):
-        # self.sort_paraphrases()
-        n_paraphrases = {}
+    def get_n_paraphrases(self, num_substitutions):
+        n_paraphrases = dict()  # map from {token => {candidates: (sub, score)}}
+        # For each token, get the top num_paraphrases replacement tokens
         for token in self.tokens:
+            if token in n_paraphrases:      # for duplicated tokens in a sentence
+                continue
+
+            p_list = []
             if self.ppdb_dict_wrapper.ppdb_dict.get(token):
-                for i in range(num_paraphrases):
-                    if token in n_paraphrases.keys():   # in case repeated tokens in sentenc
-                        try:
-                            n_paraphrases[token].add(self.ppdb_paraphrases[token][i][0])
-                        except:
-                            print("less than n paraphrases!!!")
-                    else:
-                        try:
-                            n_paraphrases[token] = {self.ppdb_paraphrases[token][i][0]}
-                        except:
-                            print("less than n paraphrases!!! ")
+                p_list = self.ppdb_dict_wrapper.ppdb_dict.get(token)[:num_substitutions]
+                p_list = [x[0] for x in p_list]
+
+            n_paraphrases[token] = p_list
 
         return n_paraphrases
 
-    def gen_paraphrase_questions(self, num_replacement, num_paraphrases):
+    def gen_paraphrase_questions(self, num_replacement, num_per_token_subs):
 
-        n_paraphrases = self.get_n_paraphrases(num_paraphrases)
+        n_paraphrases = self.get_n_paraphrases(num_per_token_subs)
         paraphrases = {}
 
         cnt = 0
         i = 0
         while cnt <= num_replacement:
             for idx, token in enumerate(self.tokens):
-                p = 0
-                if token in n_paraphrases.keys():
+                print(n_paraphrases[token], token)
+                p = 0 # candidate paraphrase
+                if token in n_paraphrases:
                     while p < len(n_paraphrases[token]):
                         tokens = list(self.tokens)
                         tokens[idx] = list(n_paraphrases[token])[p]
@@ -170,7 +169,7 @@ if __name__ == "__main__":
     # ppdb.read_lexicon()
     # ppdb.save_ppdb()
 
-    ppdb = PPDB_dict(PPDB_DB)
+    ppdb = PPDB_dict_wrapper(PPDB_DB)
     phrase = "this is an example sentence to paraphrase"
 
     new_ppdb_generator = PPDB(phrase, ppdb, isTxt = False)
