@@ -1,11 +1,10 @@
-import numpy as np
-import os.path
-import pickle
 import sys
 from nltk import word_tokenize
 import string
 from nltk.stem import SnowballStemmer
 
+
+PPDB_DB = "./rep_ppdb/ppdb-2.0-tldr"
 
 ############ THIS IS THE NLTK-BASED PARAPHRASE GENERATOR !!!! ##########
 def add_to_dict_of_set(key, value, dict_set):
@@ -38,13 +37,47 @@ def string_clean(words):
     return stripped
 
 
-class PPDB(object):
-    def __init__(self, sentence, ppdb, isTxt = True):
-        self.sentence = sentence
-        self.ppdb = ppdb
-        self.ppdb_paraphrases = ppdb_paraphrases = {}
+############ THIS IS THE PPDB-BASED PARAPHRASE GENERATOR !!!! ###########
+class PPDB_dict(object):
+    def __init__(self, ppdb_file):
+        self.ppdb_dict = dict()
 
+        with open(ppdb_file, "r") as ppdb_f:
+            lines = ppdb_f.readlines()
+            for line in lines:
+                baseword = line.split("|||")[1].strip()
+                ppword = line.split("|||")[2].strip()
+                score = line.split("|||")[3].split(" ")[1].split("=")[1]
+
+                if (line.split("|||")[-1].strip() == "Equivalence") \
+                        or (line.split("|||")[-1].strip() == "ForwardEntailment") \
+                        or (line.split("|||")[-1].strip() == "ReverseEntailment"):
+                    self.add_paraphrases(baseword, ppword, score)
+
+
+        self.ppdb_dict = {k: v for k, v in sorted(self.ppdb_dict.items(), key=lambda item: item[1])}
+
+
+    def add_paraphrases(self, baseword, ppword, score):
+        if baseword == ppword:      # don't add a self-paraphrase
+            return
+        if self.ppdb_dict.get(baseword):
+            if ppword in self.ppdb_dict.get(baseword, []):   # don't add the same thing again
+                return
+            self.ppdb_dict[baseword].append((ppword,score))
+            # self.ppdb_paraphrases[baseword] += [ppword, score]
+        else:
+            self.ppdb_dict[baseword] = [(ppword, score)]
+
+
+
+class PPDB(object):
+    def __init__(self, sentence, ppdb_dict, isTxt = True):
+        self.sentence = sentence
+        self.ppdb_dict = ppdb_dict
+        self.ppdb_paraphrases = dict()
         self.tokens = []
+        self.token_paraphrases = dict()
         if isTxt:
             with open(sentence, "r") as f_sentence:
                 lines = f_sentence.readlines()
@@ -56,23 +89,6 @@ class PPDB(object):
             tokens = word_tokenize(sentence)
             self.tokens = tokens
 
-    def read_lexicon(self):
-        print
-        "Abstract Function"
-
-    def search_baseword(self, inputword):
-        return inputword in self.ppdb_paraphrases.keys()
-
-    def add_paraphrases(self, baseword, ppword, score):
-        if baseword == ppword:
-            return
-        if self.search_baseword(baseword):
-            if ppword in self.ppdb_paraphrases[baseword]:
-                return
-            self.ppdb_paraphrases[baseword].append((ppword,score))
-            # self.ppdb_paraphrases[baseword] += [ppword, score]
-        else:
-            self.ppdb_paraphrases[baseword] = [(ppword, score)]
 
     def save_ppdb(self, filename, sortDict = True):
         if sortDict:
@@ -95,51 +111,22 @@ class PPDB(object):
                     if n % 1000 == 0:
                         f_save.flush()
 
-    def sort_paraphrases(self):
-        dict = self.ppdb_paraphrases
-        self.ppdb_paraphrases = {k: v for k, v in sorted(dict.items(), key=lambda item: item[1])}
 
-
-class PPDBE(PPDB):
-    def __init__(self, sentence, ppdb, isTxt = True):
-        super(PPDBE, self).__init__(sentence, ppdb, isTxt= isTxt)
-
-    def read_lexicon(self):
-        with open(self.ppdb, "r") as ppdb_f:
-            lines = ppdb_f.readlines()
-            n = 0
-            for line in lines:
-                if line.split("|||")[1].strip() in self.tokens:
-                    baseword = line.split("|||")[1].strip()
-                    ppword = line.split("|||")[2].strip()
-                    score = line.split("|||")[3].split(" ")[1].split("=")[1]
-
-                    if (line.split("|||")[-1].strip() == "Equivalence") \
-                            or (line.split("|||")[-1].strip() == "ForwardEntailment") \
-                            or (line.split("|||")[-1].strip() == "ReverseEntailment"):
-                        self.add_paraphrases(baseword, ppword, score)
-
-                elif line.split("|||")[2].strip() in self.tokens:
-                    baseword = line.split("|||")[1].strip()
-                    ppword = line.split("|||")[2].strip()
-                    score = line.split("|||")[3].split(" ")[1].split("=")[1]
-
-                    if (line.split("|||")[-1].strip() == "Equivalence") \
-                            or (line.split("|||")[-1].strip() == "ForwardEntailment") \
-                            or (line.split("|||")[-1].strip() == "ReverseEntailment"):
-                        self.add_paraphrases(ppword, baseword, score)
-
-    def save_ppdb(self):
-        "write ppdb2e"
-        super(PPDBE, self).save_ppdb("ppdb_E.txt")
-
+    # def get_token_paraphrases(self):
+    #     for t in self.tokens:
+    #         # self.token_paraphrases[t] = []
+    #         if t in self.ppdb_dict:
+    #             self.token_paraphrases[t] = self.ppdb_dict[t]
+    #
+    #     return self.token_paraphrases
+    #
     def get_n_paraphrases(self, num_paraphrases):
-        self.sort_paraphrases()
+        # self.sort_paraphrases()
         n_paraphrases = {}
         for token in self.tokens:
-            if token in self.ppdb_paraphrases.keys():
+            if token in self.ppdb_dict:
                 for i in range(num_paraphrases):
-                    if token in n_paraphrases.keys():
+                    if token in n_paraphrases.keys():   # in case repeated tokens in sentenc
                         try:
                             n_paraphrases[token].add(self.ppdb_paraphrases[token][i][0])
                         except:
@@ -178,14 +165,20 @@ class PPDBE(PPDB):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        vocab = sys.argv[1]
-        lexicon = sys.argv[2]
-    else:
-        vocab = "vocab2.txt"
-        lexicon = "ppdb-2.0-tldr"
-    ppdb = PPDBE(vocab, lexicon, isTxt=True)
-    ppdb.read_lexicon()
+    # if len(sys.argv) > 1:
+    #     vocab = sys.argv[1]
+    #     lexicon = sys.argv[2]
+    # else:
+    #     vocab = "vocab2.txt"
+    #     lexicon = "ppdb-2.0-tldr"
+    # ppdb = PPDBE(vocab, lexicon, isTxt=True)
+    # ppdb.read_lexicon()
     # ppdb.save_ppdb()
-    print(ppdb.gen_paraphrase_questions(2, 3))
+
+    ppdb = PPDB_dict(PPDB_DB)
+    phrase = "this is an example sentence to paraphrase"
+
+    new_ppdb_generator = PPDB(phrase, ppdb, isTxt = False)
+    new_ppdb_generator.gen_paraphrase_questions(2,3)
+    #print(ppdb.gen_paraphrase_questions(2, 3))
 
