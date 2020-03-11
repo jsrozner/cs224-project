@@ -5,6 +5,7 @@ __pycache__
 data*/
 save/
 *.txt
-from_vm/
+save_from_vm/
 ppdb-2.0-tldr
+rep_*/
 
