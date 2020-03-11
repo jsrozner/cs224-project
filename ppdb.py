@@ -1,7 +1,7 @@
-import sys
 from nltk import word_tokenize
 import string
 from nltk.stem import SnowballStemmer
+from tqdm import tqdm
 
 
 PPDB_DB = "./rep_ppdb/ppdb-2.0-tldr"
@@ -40,11 +40,12 @@ def string_clean(words):
 ############ THIS IS THE PPDB-BASED PARAPHRASE GENERATOR !!!! ###########
 class PPDB_dict(object):
     def __init__(self, ppdb_file):
+        print(f"creating a ppdb dict from {ppdb_file}")
         self.ppdb_dict = dict()
 
         with open(ppdb_file, "r") as ppdb_f:
-            lines = ppdb_f.readlines()
-            for line in lines:
+
+            for line in tqdm(ppdb_f):
                 baseword = line.split("|||")[1].strip()
                 ppword = line.split("|||")[2].strip()
                 score = line.split("|||")[3].split(" ")[1].split("=")[1]
@@ -55,7 +56,9 @@ class PPDB_dict(object):
                     self.add_paraphrases(baseword, ppword, score)
 
 
+        print(f"Now sorting by score")
         self.ppdb_dict = {k: v for k, v in sorted(self.ppdb_dict.items(), key=lambda item: item[1])}
+        print(f"Finished creating ppdb dict")
 
 
     def add_paraphrases(self, baseword, ppword, score):
@@ -72,9 +75,9 @@ class PPDB_dict(object):
 
 
 class PPDB(object):
-    def __init__(self, sentence, ppdb_dict, isTxt = True):
+    def __init__(self, sentence, ppdb_dict : PPDB_dict, isTxt = True):
         self.sentence = sentence
-        self.ppdb_dict = ppdb_dict
+        self.ppdb_dict_wrapper = ppdb_dict
         self.ppdb_paraphrases = dict()
         self.tokens = []
         self.token_paraphrases = dict()
@@ -112,19 +115,11 @@ class PPDB(object):
                         f_save.flush()
 
 
-    # def get_token_paraphrases(self):
-    #     for t in self.tokens:
-    #         # self.token_paraphrases[t] = []
-    #         if t in self.ppdb_dict:
-    #             self.token_paraphrases[t] = self.ppdb_dict[t]
-    #
-    #     return self.token_paraphrases
-    #
     def get_n_paraphrases(self, num_paraphrases):
         # self.sort_paraphrases()
         n_paraphrases = {}
         for token in self.tokens:
-            if token in self.ppdb_dict:
+            if self.ppdb_dict_wrapper.ppdb_dict.get(token):
                 for i in range(num_paraphrases):
                     if token in n_paraphrases.keys():   # in case repeated tokens in sentenc
                         try:
@@ -179,6 +174,6 @@ if __name__ == "__main__":
     phrase = "this is an example sentence to paraphrase"
 
     new_ppdb_generator = PPDB(phrase, ppdb, isTxt = False)
-    new_ppdb_generator.gen_paraphrase_questions(2,3)
+    print(new_ppdb_generator.gen_paraphrase_questions(2,3))
     #print(ppdb.gen_paraphrase_questions(2, 3))
 
