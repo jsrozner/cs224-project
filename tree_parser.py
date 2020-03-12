@@ -39,6 +39,11 @@ def traverseAllenTree(tree):
     return np_trees
 
 
+def extractPhraseFiltered(sentence, label1="NP", label2= "NNP"):
+
+    tree = getAllenTree(sentence)
+    for st in tree.subtrees(filter=lambda x: x.label() == label1 and x[0].label == label2):
+        print(st)
 
 if __name__ == "__main__":
     sentence = {"sentence": "This is a sentence to be predicted!"}
