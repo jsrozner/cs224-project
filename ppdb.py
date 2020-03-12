@@ -154,7 +154,7 @@ class PPDB(object):
         while cnt <= num_replacement and iters_outer < max_iters:
             iters_outer += 1
             for idx, token in enumerate(self.tokens):
-                print(n_paraphrases[token], token)
+                #print(n_paraphrases[token], token)
                 p = 0 # candidate paraphrase
                 if token in n_paraphrases:
                     iters = 0
@@ -173,7 +173,7 @@ class PPDB(object):
             p_count += 1
             paraphrase_list.append(" ".join(sentence))
 
-        print(f"Generated {p_count} paraphrases")
+        #print(f"Generated {p_count} paraphrases")
         return paraphrase_list
 
 

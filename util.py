@@ -666,7 +666,7 @@ def eval_dicts(gold_dict, pred_dict : Dict, no_answer):
     :return:
     """
     avna = f1 = em = total = 0
-    best_val = {}
+    best_val = {}       # dict of best paraphrase for each original UUID (map from UUID => tuple)
 
     # New: run through the pred_dict and dedupe against uuid
     # remove duplicates from the pred_dict, keeping only the best one
@@ -687,18 +687,18 @@ def eval_dicts(gold_dict, pred_dict : Dict, no_answer):
         # See if this is the best prediction
         ######
 
-        # extra setup
-        uuid = gold_dict[key]["uuid"]   # for deduping paraphrased questions, take max over all
+        # extra setup - for deduping paraphrased questions, we take max over all
+        uuid = gold_dict[key]["uuid"]
         gold_has_no_answer = (len(gold_dict[key]["answers"]) == 0)
         paraphrase_id = gold_dict[key]["paraphrase_id"]
-        paraphrase_number = int(paraphrase_id.split("_")[1])
+        paraphrase_number = int(paraphrase_id.split("_")[1])    # 0 is orig, > 0 is a paraphrase
 
         # this is a paraphrase and there is no original answer, so we throw away
         if paraphrase_number > 0 and gold_has_no_answer:
             to_pop_set.add(key)
             continue
 
-        tuple = (key, f1_val, paraphrase_id)
+        tuple = (key, f1_val, paraphrase_number)
         # otherwise always store the best value (unless it was a paraphrase with no question)
         if best_val.get(uuid) is None:
             best_val[uuid] = tuple
@@ -706,7 +706,7 @@ def eval_dicts(gold_dict, pred_dict : Dict, no_answer):
 
         # otherwise, get the previously stored value and do some work
         old_tuple = best_val[uuid]
-        old_key, old_f1_val, old_paraphrase_id = old_tuple
+        old_key, old_f1_val, old_paraphrase_num = old_tuple
 
         # update the dict
         if f1_val > old_f1_val:
@@ -719,8 +719,8 @@ def eval_dicts(gold_dict, pred_dict : Dict, no_answer):
         worse_tuple = (tuple if tuple[1] < old_tuple[1] else old_tuple)
 
         if int(better_tuple[0]) > int(worse_tuple[0]):         # the original prediction is always the lowest key
-            better_key, better_f1, better_id = better_tuple
-            worse_key, worse_f1, worse_id = worse_tuple
+            better_key, better_f1, better_num = better_tuple
+            worse_key, worse_f1, worse_num = worse_tuple
 
             print("Found a better f1 score than original question!")
             corr_answer1 = gold_dict[worse_key]["answers"]
@@ -728,18 +728,25 @@ def eval_dicts(gold_dict, pred_dict : Dict, no_answer):
             worse_answer = pred_dict[worse_key]
             better_answer = pred_dict[better_key]
             print(f"Correct answers should match: \n\t{corr_answer1}\n\t{corr_answer2}")
-            print(f"Prev answer {worse_id}, f1: {worse_f1}:\t {worse_answer}")
-            print(f"New answer {better_id}, f1: {better_f1}:\t {better_answer}")
+            print(f"Prev answer {worse_num}, f1: {worse_f1}:\t {worse_answer}")
+            print(f"New answer {better_num}, f1: {better_f1}:\t {better_answer}")
 
 
     # Condense down to the final set with dupes removed
     for val in to_pop_set:
         pred_dict.pop(val)              # remove the old value from the pred_dict
 
+    total_improved = 0                  # count of improved f1 scores
     for key, value in pred_dict.items():
         total += 1
         ground_truths = gold_dict[key]['answers']
+        uuid = gold_dict[key]["uuid"]
+
         prediction = value
+
+        tuple = best_val[uuid]
+        if tuple[2] > 0:        # it's an ipmrovement (not the original)
+            total_improved += 1
 
         em += metric_max_over_ground_truths(compute_em, prediction, ground_truths)  # compute_em is a function
         f1 += metric_max_over_ground_truths(compute_f1, prediction, ground_truths)
@@ -747,6 +754,7 @@ def eval_dicts(gold_dict, pred_dict : Dict, no_answer):
             avna += compute_avna(prediction, ground_truths)
 
     print(f"Processed {total} values after popping")
+    print(f"Got {total_improved} improved f1 values")
 
     eval_dict = {'EM': 100. * em / total,
                  'F1': 100. * f1 / total}

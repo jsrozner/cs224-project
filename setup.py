@@ -134,9 +134,9 @@ def process_file(filename, data_type, word_counter, char_counter):
                         y1s.append(y1)
                         y2s.append(y2)
 
-                    # Handle paraphrasing (new)
+                    # Handle paraphrasing (new) (only for dev set, not for train set)
                     paraphrase_set = [orig_q]
-                    if args_.generate_dev_with_paraphrases > 0:
+                    if data_type == "dev" and args_.generate_dev_with_paraphrases > 0:
                         ppdb_paraphraser.init_with_sentence(orig_q)
                         para_list = ppdb_paraphraser.gen_paraphrase_questions(2,3)  # 3 possible per word paraphrases
                                                                                     # 2 of the at a time per sentence
@@ -438,12 +438,6 @@ if __name__ == '__main__':
     # Import spacy language model
     nlp = spacy.blank("en")
 
-    # Start the ppdb
-    if args_._generate_dev_with_paraphrases > 0:
-        print("Using paraphraser with default values for generation (2,3)")
-        global ppdb_paraphraser
-        ppdb_paraphraser = ppdb.PPDB()
-
     # Preprocess dataset
     args_.train_file = url_to_data_path(args_.train_url)        # data/train-v2.0.json => train.json
     args_.dev_file = url_to_data_path(args_.dev_url)            # data/dev-v2.0.json => dev_eval.json
@@ -452,5 +446,10 @@ if __name__ == '__main__':
     glove_dir = url_to_data_path(args_.glove_url.replace('.zip', ''))
     glove_ext = f'.txt' if glove_dir.endswith('d') else f'.{args_.glove_dim}d.txt'
     args_.glove_file = os.path.join(glove_dir, os.path.basename(glove_dir) + glove_ext)
+
+    # Start the ppdb
+    if args_.generate_dev_with_paraphrases > 0:
+        print("Using paraphraser with default values for generation (2,3)")
+        ppdb_paraphraser = ppdb.PPDB()
 
     pre_process(args_)
