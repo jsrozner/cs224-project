@@ -39,7 +39,7 @@ def string_clean(words):
 
 ############ THIS IS THE PPDB-BASED PARAPHRASE GENERATOR !!!! ###########
 class PPDB_dict_wrapper(object):
-    def __init__(self, ppdb_file):
+    def __init__(self, ppdb_file = PPDB_DB):
         print(f"creating a ppdb dict from {ppdb_file}")
         self.ppdb_dict = dict()
 
@@ -75,10 +75,19 @@ class PPDB_dict_wrapper(object):
 
 
 class PPDB(object):
-    def __init__(self, sentence, ppdb_dict : PPDB_dict_wrapper, isTxt = False):
+    def __init__(self, ppdb_dict : PPDB_dict_wrapper = None, sentence = None, isTxt = False):
         print(f"Creating a paraphrase generator for {sentence}")
+        if ppdb_dict is not None:
+            self.ppdb_dict_wrapper = ppdb_dict
+        else:
+            self.ppdb_dict_wrapper = PPDB_dict_wrapper()
+
+        if sentence is not None:
+            self.init_with_sentence(sentence, isTxt)
+
+
+    def init_with_sentence(self, sentence, isTxt=False):
         self.sentence = sentence
-        self.ppdb_dict_wrapper = ppdb_dict
         self.ppdb_paraphrases = dict()
         self.tokens = []
         self.token_paraphrases = dict()
@@ -137,14 +146,20 @@ class PPDB(object):
         n_paraphrases = self.get_n_paraphrases(num_per_token_subs)
         paraphrases = {}
 
+        max_iters = 10      # safety break
+        iters_outer = 0
         cnt = 0
         i = 0
-        while cnt <= num_replacement:
+
+        while cnt <= num_replacement and iters_outer < max_iters:
+            iters_outer += 1
             for idx, token in enumerate(self.tokens):
                 print(n_paraphrases[token], token)
                 p = 0 # candidate paraphrase
                 if token in n_paraphrases:
-                    while p < len(n_paraphrases[token]):
+                    iters = 0
+                    while p < len(n_paraphrases[token]) and iters < max_iters:
+                        iters+= 1
                         tokens = list(self.tokens)
                         tokens[idx] = list(n_paraphrases[token])[p]
                         paraphrases[i] = tokens
@@ -153,8 +168,12 @@ class PPDB(object):
                     cnt += 1
 
         paraphrase_list = []
+        p_count = 0
         for id, sentence in paraphrases.items():
+            p_count += 1
             paraphrase_list.append(" ".join(sentence))
+
+        print(f"Generated {p_count} paraphrases")
         return paraphrase_list
 
 
@@ -173,6 +192,8 @@ if __name__ == "__main__":
     phrase = "this is an example sentence to paraphrase"
 
     new_ppdb_generator = PPDB(phrase, ppdb, isTxt = False)
+
+    # take 3 per word, 2 total words changed each time
     print(new_ppdb_generator.gen_paraphrase_questions(2,3))
     #print(ppdb.gen_paraphrase_questions(2, 3))
 

@@ -24,11 +24,9 @@ from subprocess import run
 from tqdm import tqdm
 from zipfile import ZipFile
 
+import ppdb
 
-
-def get_paraphrases(question):
-    return ["The quick brown fox"]
-
+ppdb_paraphraser = None
 
 
 def download_url(url, output_path, show_progress=True):
@@ -139,12 +137,13 @@ def process_file(filename, data_type, word_counter, char_counter):
                     # Handle paraphrasing (new)
                     paraphrase_set = [orig_q]
                     if args_.generate_dev_with_paraphrases > 0:
-                        paraphrase_set += get_paraphrases(orig_q)
-                        assert(len(paraphrase_set) == 2)
+                        ppdb_paraphraser.init_with_sentence(orig_q)
+                        para_list = ppdb_paraphraser.gen_paraphrase_questions(2,3)  # 3 possible per word paraphrases
+                                                                                    # 2 of the at a time per sentence
+                        paraphrase_set += para_list
                     paraphrases_generated += len(paraphrase_set) - 1
 
                     #todo:
-                    # - should we increment total above or below
                     # - should we increment word_counter and char_counter for each question
 
                     for j in range(len(paraphrase_set)):
@@ -438,6 +437,10 @@ if __name__ == '__main__':
 
     # Import spacy language model
     nlp = spacy.blank("en")
+
+    # Start the ppdb
+    global ppdb_paraphraser
+    ppdb_paraphraser = ppdb.PPDB()
 
     # Preprocess dataset
     args_.train_file = url_to_data_path(args_.train_url)        # data/train-v2.0.json => train.json
