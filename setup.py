@@ -439,8 +439,10 @@ if __name__ == '__main__':
     nlp = spacy.blank("en")
 
     # Start the ppdb
-    global ppdb_paraphraser
-    ppdb_paraphraser = ppdb.PPDB()
+    if args_._generate_dev_with_paraphrases > 0:
+        print("Using paraphraser with default values for generation (2,3)")
+        global ppdb_paraphraser
+        ppdb_paraphraser = ppdb.PPDB()
 
     # Preprocess dataset
     args_.train_file = url_to_data_path(args_.train_url)        # data/train-v2.0.json => train.json
@@ -450,9 +452,5 @@ if __name__ == '__main__':
     glove_dir = url_to_data_path(args_.glove_url.replace('.zip', ''))
     glove_ext = f'.txt' if glove_dir.endswith('d') else f'.{args_.glove_dim}d.txt'
     args_.glove_file = os.path.join(glove_dir, os.path.basename(glove_dir) + glove_ext)
-
-    # Handle paraphrasing
-    if args_.generate_dev_with_paraphrases > 0:
-        print(f"Running with {args_.generate_dev_with_paraphrases} paraphrases...")
 
     pre_process(args_)
