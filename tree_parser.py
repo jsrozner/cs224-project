@@ -115,12 +115,20 @@ def getHeightNode(tree):
         leaf_index = leaf_values.index('nice')
         tree_location = newtree.leaf_treeposition(leaf_index)
 
-def getTreeLeaves(tree):
-    leafpos = [tree.leaf_treeposition(n) for n, x in enumerate(tree.leaves())]
-    level1_subtrees = [tree[path[:-1]] for path in leafpos]
-    print(leafpos)
-    for x in level1_subtrees:
-        print(x, end=" ")
+def getNodeLeaves(tree):
+    # leafpos = [tree.leaf_treeposition(n) for n, x in enumerate(tree.leaves())]
+    # level1_subtrees = [tree[path[:-1]] for path in leafpos]
+    # print(leafpos)
+    # for x in level1_subtrees:
+    #     print(x, end=" ")
+    tree_dict = {}
+    for i in tree.subtrees():
+        if i.label() not in tree_dict:
+            tree_dict[i.label()] = [(i.leaves(),len(i.leaves()))]
+        else:
+            tree_dict[i.label()] += [(i.leaves(),len(i.leaves()))]
+
+    return tree_dict
 
 
 if __name__ == "__main__":
@@ -130,4 +138,5 @@ if __name__ == "__main__":
     # print(find_VP(tree))
     # print(traverse(tree))
     # print(getHeightNode(tree))
-    print(getTreeLeaves(tree))
+    print(getNodeLeaves(tree))
+    # print(getNodePosition(tree))
