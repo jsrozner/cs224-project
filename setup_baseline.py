@@ -11,6 +11,10 @@ Author:
     Chris Chute (chute@stanford.edu)
 """
 
+"""A modified setup.py file, to generate paraphrases (if appropriate flag set) for use in the baseline model.
+Calls to ppdb.py to generate the paraphrases
+"""
+
 import numpy as np
 import os
 import spacy
@@ -23,6 +27,10 @@ from collections import Counter
 from subprocess import run
 from tqdm import tqdm
 from zipfile import ZipFile
+
+import ppdb
+
+ppdb_paraphraser = None
 
 
 def download_url(url, output_path, show_progress=True):
@@ -70,6 +78,7 @@ def download(args):
     print('Downloading spacy language model...')
     run(['python', '-m', 'spacy', 'download', 'en'])
 
+
 def word_tokenize(sent):
     doc = nlp(sent)
     return [token.text for token in doc]
@@ -93,29 +102,27 @@ def process_file(filename, data_type, word_counter, char_counter):
     examples = []
     eval_examples = {}
     total = 0
+    paraphrases_generated = 0
     with open(filename, "r") as fh:
         source = json.load(fh)
         for article in tqdm(source["data"]):
             for para in article["paragraphs"]:
                 context = para["context"].replace(
                     "''", '" ').replace("``", '" ')
-                context_tokens = word_tokenize(context)
+                context_tokens = word_tokenize(context)                     # each words
                 context_chars = [list(token) for token in context_tokens]
                 spans = convert_idx(context, context_tokens)
                 for token in context_tokens:
-                    word_counter[token] += len(para["qas"])
+                    word_counter[token] += len(para["qas"])                 # num unique QA pairs for this context
                     for char in token:
                         char_counter[char] += len(para["qas"])
+
+                # Parse each of the question-answer sets (qa)
                 for qa in para["qas"]:
-                    total += 1
-                    ques = qa["question"].replace(
+                    orig_q = qa["question"].replace(
                         "''", '" ').replace("``", '" ')
-                    ques_tokens = word_tokenize(ques)
-                    ques_chars = [list(token) for token in ques_tokens]
-                    for token in ques_tokens:
-                        word_counter[token] += 1
-                        for char in token:
-                            char_counter[char] += 1
+
+                    # For each qa, we parse one time the answer information
                     y1s, y2s = [], []
                     answer_texts = []
                     for answer in qa["answers"]:
@@ -125,25 +132,59 @@ def process_file(filename, data_type, word_counter, char_counter):
                         answer_texts.append(answer_text)
                         answer_span = []
                         for idx, span in enumerate(spans):
-                            if not (answer_end <= span[0] or answer_start >= span[1]):
-                                answer_span.append(idx)
+                            if not (answer_end <= span[0] or answer_start >= span[1]): # valid span
+                                answer_span.append(idx)                                # then store
                         y1, y2 = answer_span[0], answer_span[-1]
                         y1s.append(y1)
                         y2s.append(y2)
-                    example = {"context_tokens": context_tokens,
-                               "context_chars": context_chars,
-                               "ques_tokens": ques_tokens,
-                               "ques_chars": ques_chars,
-                               "y1s": y1s,
-                               "y2s": y2s,
-                               "id": total}
-                    examples.append(example)
-                    eval_examples[str(total)] = {"context": context,
-                                                 "question": ques,
-                                                 "spans": spans,
-                                                 "answers": answer_texts,
-                                                 "uuid": qa["id"]}
+
+                    # Handle paraphrasing (new) (only for dev set, not for train set)
+                    paraphrase_set = [orig_q]
+                    if data_type == "dev" and args_.generate_dev_with_paraphrases > 0:
+                        ppdb_paraphraser.init_with_sentence(orig_q)
+                        para_list = ppdb_paraphraser.gen_paraphrase_questions(2,3)  # 3 possible per word paraphrases
+                                                                                    # 2 of the at a time per sentence
+                        paraphrase_set += para_list
+                    paraphrases_generated += len(paraphrase_set) - 1
+
+                    #todo:
+                    # - should we increment word_counter and char_counter for each question
+
+                    for j in range(len(paraphrase_set)):
+                        total += 1
+                        q = paraphrase_set[j]
+                        #print(f"Paraphrased to: {q}")
+                        ques_tokens = word_tokenize(q)
+                        ques_chars = [list(token) for token in ques_tokens]
+
+                        # Modify the counters iff it is the first question (this enables us to re-use a
+                        # pretrained model
+                        if j == 0:
+                            for token in ques_tokens:
+                                word_counter[token] += 1
+                                for char in token:
+                                    char_counter[char] += 1
+
+                        paraphrase_id = qa["id"] + "_" + str(j)
+                        example = {"context_tokens": context_tokens,
+                                   "context_chars": context_chars,
+                                   "ques_tokens": ques_tokens,
+                                   "ques_chars": ques_chars,
+                                   "y1s": y1s,
+                                   "y2s": y2s,
+                                   "id": total}
+                                    # uuid not needed in baseline because accessed from eval_examples
+                        examples.append(example)
+
+                        # todo: why do they use str(total) instead of just total
+                        eval_examples[str(total)] = {"context": context,
+                                                     "question": q,
+                                                     "spans": spans,
+                                                     "answers": answer_texts,
+                                                     "uuid": qa["id"],
+                                                     "paraphrase_id": paraphrase_id}    # new
         print(f"{len(examples)} questions in total")
+        print(f"{paraphrases_generated} paraphrases generated")
     return examples, eval_examples
 
 
@@ -295,14 +336,18 @@ def build_features(args, examples, data_type, out_file, word2idx_dict, char2idx_
         ques_idx = np.zeros([ques_limit], dtype=np.int32)
         ques_char_idx = np.zeros([ques_limit, char_limit], dtype=np.int32)
 
+        # update words to their index in the embeddings
         for i, token in enumerate(example["context_tokens"]):
             context_idx[i] = _get_word(token)
         context_idxs.append(context_idx)
 
+        # update words (in question) to index in the embeddings
         for i, token in enumerate(example["ques_tokens"]):
             ques_idx[i] = _get_word(token)
         ques_idxs.append(ques_idx)
 
+        # same as above but for characters
+        # matrix indexed by (word, char in word)
         for i, token in enumerate(example["context_chars"]):
             for j, char in enumerate(token):
                 if j == char_limit:
@@ -310,6 +355,7 @@ def build_features(args, examples, data_type, out_file, word2idx_dict, char2idx_
                 context_char_idx[i, j] = _get_char(char)
         context_char_idxs.append(context_char_idx)
 
+        # same as above but for characters
         for i, token in enumerate(example["ques_chars"]):
             for j, char in enumerate(token):
                 if j == char_limit:
@@ -339,6 +385,15 @@ def build_features(args, examples, data_type, out_file, word2idx_dict, char2idx_
     return meta
 
 
+
+# def file_exists_and_should_skip(filename):
+#     if not args_.skip_setup_if_exists or not os.path.exists(filename):
+#         return False
+
+    # return True
+
+
+
 def save(filename, obj, message=None):
     if message is not None:
         print(f"Saving {message}...")
@@ -352,13 +407,15 @@ def pre_process(args):
     train_examples, train_eval = process_file(args.train_file, "train", word_counter, char_counter)
     word_emb_mat, word2idx_dict = get_embedding(
         word_counter, 'word', emb_file=args.glove_file, vec_size=args.glove_dim, num_vectors=args.glove_num_vecs)
-    char_emb_mat, char2idx_dict = get_embedding(
-        char_counter, 'char', emb_file=None, vec_size=args.char_dim)
+    char_emb_mat, char2idx_dict = get_embedding(char_counter, 'char', emb_file=None, vec_size=args.char_dim)
 
     # Process dev and test sets
     dev_examples, dev_eval = process_file(args.dev_file, "dev", word_counter, char_counter)
     build_features(args, train_examples, "train", args.train_record_file, word2idx_dict, char2idx_dict)
+
+    # dev_examples used in build_features, which writes the npz file used to eval
     dev_meta = build_features(args, dev_examples, "dev", args.dev_record_file, word2idx_dict, char2idx_dict)
+
     if args.include_test_examples:
         test_examples, test_eval = process_file(args.test_file, "test", word_counter, char_counter)
         save(args.test_eval_file, test_eval, message="test eval")
@@ -366,31 +423,37 @@ def pre_process(args):
                                    args.test_record_file, word2idx_dict, char2idx_dict, is_test=True)
         save(args.test_meta_file, test_meta, message="test meta")
 
-    save(args.word_emb_file, word_emb_mat, message="word embedding")
-    save(args.char_emb_file, char_emb_mat, message="char embedding")
-    save(args.train_eval_file, train_eval, message="train eval")
-    save(args.dev_eval_file, dev_eval, message="dev eval")
-    save(args.word2idx_file, word2idx_dict, message="word dictionary")
+    save(args.word_emb_file, word_emb_mat, message="word embedding")    # word_emb.json
+    save(args.char_emb_file, char_emb_mat, message="char embedding")    # char_emb.json
+    save(args.train_eval_file, train_eval, message="train eval")        # train_eval.json
+    save(args.dev_eval_file, dev_eval, message="dev eval")              # dev_eval.json
+    save(args.word2idx_file, word2idx_dict, message="word dictionary")  # word2idx.json (seems not to be loaded by test)
     save(args.char2idx_file, char2idx_dict, message="char dictionary")
-    save(args.dev_meta_file, dev_meta, message="dev meta")
+    save(args.dev_meta_file, dev_meta, message="dev meta")              # dev_meta.json (not important)
 
 
 if __name__ == '__main__':
     # Get command-line args
     args_ = get_setup_args()
 
-    # Download resources
+    # Download resources (only if not already downloaded)
     download(args_)
 
     # Import spacy language model
     nlp = spacy.blank("en")
 
     # Preprocess dataset
-    args_.train_file = url_to_data_path(args_.train_url)
-    args_.dev_file = url_to_data_path(args_.dev_url)
+    args_.train_file = url_to_data_path(args_.train_url)        # data/train-v2.0.json => train.json
+    args_.dev_file = url_to_data_path(args_.dev_url)            # data/dev-v2.0.json => dev_eval.json
     if args_.include_test_examples:
         args_.test_file = url_to_data_path(args_.test_url)
     glove_dir = url_to_data_path(args_.glove_url.replace('.zip', ''))
     glove_ext = f'.txt' if glove_dir.endswith('d') else f'.{args_.glove_dim}d.txt'
     args_.glove_file = os.path.join(glove_dir, os.path.basename(glove_dir) + glove_ext)
+
+    # Start the ppdb
+    if args_.generate_dev_with_paraphrases > 0:
+        print("Using paraphraser with default values for generation (2,3)")
+        ppdb_paraphraser = ppdb.PPDB()
+
     pre_process(args_)

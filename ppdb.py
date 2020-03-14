@@ -3,6 +3,9 @@ import string
 from nltk.stem import SnowballStemmer
 from tqdm import tqdm
 
+"""
+This file used to generate baseline paraphrases from ppdb.
+"""
 
 PPDB_DB = "./rep_ppdb/ppdb-2.0-tldr"
 

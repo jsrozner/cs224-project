@@ -2,10 +2,12 @@
 .idea/
 __pycache__
 .texpadtmp/
+bkup/
 data*/
-save/
-*.txt
-save_from_vm/
-ppdb-2.0-tldr
 rep_*/
+save/
+save_from_vm/
+
+ppdb-2.0-tldr
+*.txt
 
