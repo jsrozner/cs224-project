@@ -25,15 +25,15 @@ from util import collate_fn, SQuAD
 
 
 def main(args):
-    # Set up logging and devices
+    # Set up logging and devices (unchanged from train.py)
     args.save_dir = util.get_save_dir(args.save_dir, args.name, training=True)
     log = util.get_logger(args.save_dir, args.name)
     tbx = SummaryWriter(args.save_dir)
     device, args.gpu_ids = util.get_available_devices()
     log.info(f'Args: {dumps(vars(args), indent=4, sort_keys=True)}')
-    args.batch_size *= max(1, len(args.gpu_ids))
+    args.batch_size *= max(1, len(args.gpu_ids))        # args.py: default size is 64
 
-    # Set random seed
+    # Set random seed (unchanged)
     log.info(f'Using random seed {args.seed}...')
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -44,20 +44,26 @@ def main(args):
     log.info('Loading embeddings...')
     word_vectors = util.torch_from_json(args.word_emb_file)
 
-    # Get model
-    log.info('Building model...')
-    model = BiDAF(word_vectors=word_vectors,
-                  hidden_size=args.hidden_size,
-                  drop_prob=args.drop_prob)
-    model = nn.DataParallel(model, args.gpu_ids)
-    if args.load_path:
-        log.info(f'Loading checkpoint from {args.load_path}...')
-        model, step = util.load_model(model, args.load_path, args.gpu_ids)
-    else:
-        step = 0
-    model = model.to(device)
-    model.train()
-    ema = util.EMA(model, args.ema_decay)
+    # Prepare BiDAF model (must already trained)
+    log.info('Building BiDAF model (should be pretrained)')
+    bidaf_model = BiDAF(word_vectors=word_vectors,          # todo: these word vectors shouldn't matter?
+                          hidden_size=args.hidden_size,     # since they will be loaded in during load_model?
+                          drop_prob=args.drop_prob)
+    bidaf_model = nn.DataParallel(bidaf_model, args.gpu_ids)
+
+    if not args.load_path:
+        log.info("Trying to trian paraphraser withou bidaf model. "
+                 "First train BiDAF and then specify the load path. Exiting")
+        exit(1)
+
+    log.info(f'Loading checkpoint from {args.load_path}...')
+    bidaf_model, step = util.load_model(bidaf_model, args.load_path, args.gpu_ids)
+
+    bidaf_model = bidaf_model.to(device)
+    bidaf_model.eval()                  # we eval only (vs train)
+
+    # Setup the Paraphraser model
+    ema = util.EMA(bidaf_model, args.ema_decay)
 
     # Get saver
     saver = util.CheckpointSaver(args.save_dir,
@@ -73,13 +79,13 @@ def main(args):
 
     # Get data loader
     log.info('Building dataset...')
-    train_dataset = SQuAD(args.train_record_file, args.use_squad_v2)
+    train_dataset = SQuAD(args.train_record_file, args.use_squad_v2)    # train.npz (from setup.py, build_features())
     train_loader = data.DataLoader(train_dataset,
                                    batch_size=args.batch_size,
                                    shuffle=True,
                                    num_workers=args.num_workers,
                                    collate_fn=collate_fn)
-    dev_dataset = SQuAD(args.dev_record_file, args.use_squad_v2)
+    dev_dataset = SQuAD(args.dev_record_file, args.use_squad_v2)        # dev.npz (same as above)
     dev_loader = data.DataLoader(dev_dataset,
                                  batch_size=args.batch_size,
                                  shuffle=False,

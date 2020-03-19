@@ -13,7 +13,7 @@ Author:
 
 """Adapted from setup.py file, to call tree_parse paraphrases (if appropriate flag set) for use in the baseline model.
 1) Run normal setup.py
-2) Run normal train.py (trains BiDAF)
+2) Run normal train.py (trains BiDAF) (takes a long time)
 
 3) Run this setup.py - prepares for paraphraser
 4) Run train_paraphraser.py - trains the paraphrase generator using a static BiDAF trained in (2)
@@ -33,6 +33,9 @@ from tqdm import tqdm
 from setup import download, url_to_data_path, word_tokenize, convert_idx, get_embedding, is_answerable, save
 
 
+# Modified from process_file in setup.py.
+#
+# We need to get all the possible phrasal replacements
 def process_file(filename, data_type, word_counter, char_counter):
     print(f"Pre-processing {data_type} examples...")
     examples = []
