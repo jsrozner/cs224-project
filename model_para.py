@@ -19,14 +19,12 @@ class Paraphraser(nn.Module):
     def __init__(self, word_vectors, hidden_size, drop_prob=0.):
         super(Paraphraser, self).__init__()
         # We load embeddings from a glove vector file.
-        #todo: note that this also includes a character component. do we want this whole thing? See the
-        # layers file for details
-
-        # todo: we also need to add a do not replace vector that needs to be trained
+        # embedding, drop, projection (linear), highway layer - todo: do we want all of these or just embedding?
         self.emb = layers.Embedding(word_vectors=word_vectors,
                                     hidden_size=hidden_size,
                                     drop_prob=drop_prob)
 
+        # todo: we also need to add a do not replace vector that needs to be trained
         # initialize a gumbel softmax (or just use the nn.functional)
 
     def forward(self, cw_idxs, qw_idxs, qw_to_phrases, rw_idxs):
@@ -93,7 +91,7 @@ class Paraphraser(nn.Module):
         # in the lookup, substitute in the list of actual word tokens
         # gives (batch_size, max_num_phrases_in_q, [list of word tokens])
 
-        # finally concatenate along the phrases dimension
+        # finally concatenate along the phrases dimension (also reduce to max length, or drop)
         # (batch_size) where each entry is [list of all word tokens in the whole paraphrased question])
 
         # return this final thing as the paraphrased question indices that will be passed into the BiDAF!

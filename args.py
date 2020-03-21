@@ -23,10 +23,19 @@ def get_setup_args():
     parser.add_argument('--generate_dev_with_paraphrases',
                         type=int,
                         default=0)
-
     # End new modifications for baseline model
     ######
 
+    ######
+    # New modifications for paraphraser model
+    parser.add_argument('--allen_tree_min_phrase_len',
+                        type=int,
+                        defaut=3)
+    # todo: should add the set of phrase types to consider
+
+
+    # End new modifications for baseline model
+    ######
     parser.add_argument('--train_url',
                         type=str,
                         default='https://github.com/chrischute/squad/data/train-v2.0.json')

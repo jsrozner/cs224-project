@@ -52,9 +52,9 @@ class BiDAF(nn.Module):
                                       drop_prob=drop_prob)
 
     def forward(self, cw_idxs, qw_idxs):
-        c_mask = torch.zeros_like(cw_idxs) != cw_idxs
-        q_mask = torch.zeros_like(qw_idxs) != qw_idxs
-        c_len, q_len = c_mask.sum(-1), q_mask.sum(-1)
+        c_mask = torch.zeros_like(cw_idxs) != cw_idxs   # the non-zero indices (i.e. in-vocab) parts of the embedding
+        q_mask = torch.zeros_like(qw_idxs) != qw_idxs   #
+        c_len, q_len = c_mask.sum(-1), q_mask.sum(-1)   # sum along the last dimensino
 
         c_emb = self.emb(cw_idxs)         # (batch_size, c_len, hidden_size)
         q_emb = self.emb(qw_idxs)         # (batch_size, q_len, hidden_size)

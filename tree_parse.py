@@ -9,19 +9,22 @@ from setup import word_tokenize
 
 # todo: config should be input
 class AllenPredictor():
-    def __init__(self):
+    def __init__(self, min_phrase_len=3):
         archive = load_archive("./rep_allennlp/elmo-constituency-parser-2018.03.14.tar.gz")
         self.predictor = Predictor.from_archive(archive, 'constituency-parser')
 
-        self.stop_leaves = 3
-        self.replacement_node_types = ["NP", "VP", "VBZ", "VBN"] # todo
+        self.stop_leaves = min_phrase_len
 
+        self.replacement_node_types = ["NP", "VP", "VBZ", "VBN"] # todo
         self.num_replacement_node_types = len(self.replacement_node_types)
+
         self.tree_label_to_index = {name: i for i, name in enumerate(self.replacement_node_types)}
+
+        print(f'Initialied allen tree predictor with stop leaves={self.stop_leaves} and the following substitution nodes')
+        pp(self.replacement_node_types)
 
     def get_allen_tree(self, sentence) -> Tree:
         output = self.predictor.predict_json(sentence)
-        #pp(output["trees"])
         return Tree.fromstring(output["trees"])
 
 
@@ -32,7 +35,10 @@ class AllenPredictor():
         Parses a tree into the set of phrases that meet certain criteria.
 
         :param start_tree: The input tree representing a sentence. Parse looking for phrases of certain type
-        :return: List (indexed by label type) => tuple of (words in phrase, len of phrase)
+        :return: List (indexed by label type) => tuple of (words in phrase, len of phrase).
+            dict: phrase: phrase_text
+                phrase_type: numeric
+                spans: tuple(start, end)
         """
 
         # Modifies a tree ** be careful **
@@ -55,20 +61,20 @@ class AllenPredictor():
                 else:  # valid stop (few enough leaves, and it's in the replacement list)
                     phrase = child.leaves()
                     nonlocal phrases_to_paraphrase
-                    phrases_to_paraphrase += [(phrase, self.tree_label_to_index[label])] # phrase, type of phrase
+                    phrases_to_paraphrase += [(phrase, self.tree_label_to_index[label])] # phrase, type of phrase (numeric)
 
         tree_with_leaf_indices = _add_indices_to_terminals(start_tree)   # add indices to tree roots
-        phrases_to_paraphrase = []                   # accumulation set from tree traversal
+        phrases_to_paraphrase = []                   # accumulation set from tree traversal List[(phrase, type_of_phrase_numeric)]
         _internal_traverse(tree_with_leaf_indices)   # modifies phrases_to_paraphrase
 
         output_list = []                                # final accumulation (postprocess)
-        for p, label_numeric in phrases_to_paraphrase:  # each p is a tuple (phrase, label_numeric)
-            phrase_start_idx = int(p[0].split("_")[1])
-            for i, word in enumerate(p):                # iterate over the words in each phrase, p
-                p[i] = word.split("_")[0]
-            output_list += [{"phrase": p,
-                             "type": label_numeric,
-                             "span": (phrase_start_idx, phrase_start_idx + len(p) - 1)}]
+        for phrase_text, label_numeric in phrases_to_paraphrase:  # need to remove the indices that were appended
+            phrase_start_idx = int(phrase_text[0].split("_")[1])  # index of the first word in this phrase
+            for i, word in enumerate(phrase_text):                # iterate over the words in each phrase, p
+                phrase_text[i] = word.split("_")[0]
+            output_list += [{"phrase": phrase_text,               # phrase_text
+                             "type": label_numeric,               # type of phrase (numeric)
+                             "span": (phrase_start_idx, phrase_start_idx + len(phrase_text) - 1)}]  # (start, end) of phrase
 
         return output_list
 
@@ -88,7 +94,13 @@ class AllenPredictor():
         return non_replacement_list
 
 
-    def parse_question_tree_for_phrases(self, question) -> Tuple:
+    def parse_question_for_phrases(self, question) -> Tuple:
+        """
+        :param question:
+        :return: tuple:
+            - list of entries for each phrase, each entry: phrase, phrase_type_numeric, spans (tuple)
+            - list of entries for each non-replace phrase, each entry: phrase, spans
+        """
         tree = allen_predictor.get_allen_tree({"sentence": question})
 
         orig_sentence = tree.leaves()       # must do before calling the below (since tree will be modified)
@@ -147,7 +159,7 @@ if __name__ == "__main__":
     # pp(tree_string)
 
     # Actual run - parse question and context
-    replace, nonreplace = allen_predictor.parse_question_tree_for_phrases(sentence)
+    replace, nonreplace = allen_predictor.parse_question_for_phrases(sentence)
     pp(replace)
     pp(nonreplace)
     pp(allen_predictor.context_to_replacement_phrase_sets(context_paragraph))

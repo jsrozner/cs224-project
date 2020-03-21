@@ -79,6 +79,13 @@ def word_tokenize(sent):
 
 
 def convert_idx(text, tokens):
+    """
+    For a list of tokens (words) from a text, get the indices in the text for each of the tokens
+    Return is of the form list[(start, end)]
+    :param text:
+    :param tokens:
+    :return:
+    """
     current = 0
     spans = []
     for token in tokens:
@@ -173,13 +180,22 @@ def get_embedding(counter, data_type, limit=-1, emb_file=None, vec_size=None, nu
 
     NULL = "--NULL--"
     OOV = "--OOV--"
+
+    # map each token to an index (an int)
+    # start at 2 (0 is NULL, 1 is OOV)
     token2idx_dict = {token: idx for idx, token in enumerate(embedding_dict.keys(), 2)}
-    token2idx_dict[NULL] = 0
+    token2idx_dict[NULL] = 0        # verify -- most likely the padding token
     token2idx_dict[OOV] = 1
-    embedding_dict[NULL] = [0. for _ in range(vec_size)]
+
+    # augment the embedding dictionary for the final step
+    embedding_dict[NULL] = [0. for _ in range(vec_size)]    # the embedding for NULL and OOV is zeros
     embedding_dict[OOV] = [0. for _ in range(vec_size)]
+
+    # generate a final idx => embedding lookup table
     idx2emb_dict = {idx: embedding_dict[token]
-                    for token, idx in token2idx_dict.items()}
+                    for token, idx in token2idx_dict.items()}   # token => idx
+
+    # transform it into a matrix
     emb_mat = [idx2emb_dict[idx] for idx in range(len(idx2emb_dict))]
     return emb_mat, token2idx_dict
 

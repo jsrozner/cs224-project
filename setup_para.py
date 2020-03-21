@@ -31,6 +31,7 @@ from collections import Counter
 from tqdm import tqdm
 
 from setup import download, url_to_data_path, word_tokenize, convert_idx, get_embedding, is_answerable, save
+from tree_parse import AllenPredictor
 
 
 # Modified from process_file in setup.py.
@@ -41,7 +42,7 @@ def process_file(filename, data_type, word_counter, char_counter):
     examples = []
     eval_examples = {}
     total = 0
-    paraphrases_generated = 0
+    #paraphrases_generated = 0  was used in baseline_para
 
     # Process all examples in the json file
     with open(filename, "r") as fh:
@@ -50,82 +51,78 @@ def process_file(filename, data_type, word_counter, char_counter):
             for para in article["paragraphs"]:
                 context = para["context"].replace(
                     "''", '" ').replace("``", '" ')
-                context_tokens = word_tokenize(context)                     # each words
-                context_chars = [list(token) for token in context_tokens]
-                spans = convert_idx(context, context_tokens)
+                context_tokens = word_tokenize(context)                     # each word
+                context_chars = [list(token) for token in context_tokens]   # char tokens (seem not ever to be used)
+                spans = convert_idx(context, context_tokens)                # list of spans for each word
+
+                # for each word, record how frequently it appears (to weight for embedding)
                 for token in context_tokens:
                     word_counter[token] += len(para["qas"])                 # num unique QA pairs for this context
                     for char in token:
                         char_counter[char] += len(para["qas"])
 
-                # Parse each of the question-answer sets (qa)
-                for qa in para["qas"]:
-                    orig_q = qa["question"].replace(
-                        "''", '" ').replace("``", '" ')
+                # New for tree paraphraser
+                # This is a List of lists, for each phrase type, has list of possible replacement phrases
+                context_replacement_phrases = allen_tree.context_to_replacement_phrase_sets(context)
 
-                    # For each qa, we parse one time the answer information
-                    y1s, y2s = [], []
-                    answer_texts = []
+                # Parse each of the question-answer pairs (qa)
+                for qa in para["qas"]:
+                    total += 1
+                    ques = qa["question"].replace(
+                        "''", '" ').replace("``", '" ')
+                    ques_tokens = word_tokenize(ques)
+                    ques_chars = [list(token) for token in ques_tokens]
+                    for token in ques_tokens:
+                        word_counter[token] += 1
+                        for char in token:
+                            char_counter[char] += 1
+
+                    # New for tree paraphraser
+                    replace_phrases, non_replace_phrases = allen_tree.parse_question_for_phrases(ques)
+
+                    # For each qa, we get all the answers (there are multiple)
+                    y1s, y2s = [], []       # accumulate spans of all answer spans (starts and ends)
+                    answer_texts = []       # the actual answer texts
                     for answer in qa["answers"]:
                         answer_text = answer["text"]
                         answer_start = answer['answer_start']
                         answer_end = answer_start + len(answer_text)
                         answer_texts.append(answer_text)
                         answer_span = []
+                        # If the answer text overlaps with any of the spans, mark the words it contains
                         for idx, span in enumerate(spans):
-                            if not (answer_end <= span[0] or answer_start >= span[1]): # valid span
-                                answer_span.append(idx)                                # then store
-                        y1, y2 = answer_span[0], answer_span[-1]
+                            if not (answer_end <= span[0] or answer_start >= span[1]):
+                                answer_span.append(idx)
+                        y1, y2 = answer_span[0], answer_span[-1]    # start and end indices for the answer span
                         y1s.append(y1)
                         y2s.append(y2)
 
-                    # Handle paraphrasing (new) (only for dev set, not for train set)
-                    paraphrase_set = [orig_q]
-                    if data_type == "dev" and args_.generate_dev_with_paraphrases > 0:
-                        ppdb_paraphraser.init_with_sentence(orig_q)
-                        para_list = ppdb_paraphraser.gen_paraphrase_questions(2,3)  # 3 possible per word paraphrases
-                                                                                    # 2 of the at a time per sentence
-                        paraphrase_set += para_list
-                    paraphrases_generated += len(paraphrase_set) - 1
+                    # one for each question
+                    # Modified for tree paraphraser
+                    example = {"context_tokens": context_tokens,    # for .npz files via build_features
+                               "context_chars": context_chars,
+                               "ques_tokens": ques_tokens,
+                               "ques_chars": ques_chars,
+                               "y1s": y1s,
+                               "y2s": y2s,
+                               "id": total,
+                               "context_phrases": context_replacement_phrases,
+                               "ques_phr_replace": replace_phrases,
+                               "ques_phr_no_replace": non_replace_phrases
+                               }
+                    examples.append(example)
 
-                    #todo:
-                    # - should we increment word_counter and char_counter for each question
-
-                    for j in range(len(paraphrase_set)):
-                        total += 1
-                        q = paraphrase_set[j]
-                        #print(f"Paraphrased to: {q}")
-                        ques_tokens = word_tokenize(q)
-                        ques_chars = [list(token) for token in ques_tokens]
-
-                        # Modify the counters iff it is the first question (this enables us to re-use a
-                        # pretrained model
-                        if j == 0:
-                            for token in ques_tokens:
-                                word_counter[token] += 1
-                                for char in token:
-                                    char_counter[char] += 1
-
-                        paraphrase_id = qa["id"] + "_" + str(j)
-                        example = {"context_tokens": context_tokens,
-                                   "context_chars": context_chars,
-                                   "ques_tokens": ques_tokens,
-                                   "ques_chars": ques_chars,
-                                   "y1s": y1s,
-                                   "y2s": y2s,
-                                   "id": total}
-                                    # uuid not needed for identification because can be accessed from eval_examples
-                        examples.append(example)
-
-                        # todo: why do they use str(total) instead of just total
-                        eval_examples[str(total)] = {"context": context,
-                                                     "question": q,
-                                                     "spans": spans,
-                                                     "answers": answer_texts,
-                                                     "uuid": qa["id"]}
-                                                     #"paraphrase_id": paraphrase_id}    # new - used for baseline
+                    # todo: why do they use str(total) instead of just total
+                    eval_examples[str(total)] = {"context": context,        # for dev_eval and train_eval
+                                                 "question": ques,
+                                                 "spans": spans,
+                                                 "answers": answer_texts,
+                                                 "uuid": qa["id"],
+                                                "context_phrases": context_replacement_phrases,
+                                                "ques_phr_replace": replace_phrases,
+                                                "ques_phr_no_replace": non_replace_phrases}
+                                                 #"paraphrase_id": paraphrase_id}    # new - used for baseline
         print(f"{len(examples)} questions in total")
-        print(f"{paraphrases_generated} paraphrases generated")
     return examples, eval_examples
 
 
@@ -137,7 +134,11 @@ def build_features(args, examples, data_type, out_file, word2idx_dict, char2idx_
     ans_limit = args.ans_limit
     char_limit = args.char_limit
 
-    def drop_example(ex, is_test_=False):
+    # New for paraphraser todo
+    ques_phrase_limit = ques_limit    # max num phrases in the question (potentially one for each word)
+    replacement_phrase_limit = para_limit
+
+    def _drop_example(ex, is_test_=False):
         if is_test_:
             drop = False
         else:
@@ -145,13 +146,11 @@ def build_features(args, examples, data_type, out_file, word2idx_dict, char2idx_
                    len(ex["ques_tokens"]) > ques_limit or \
                    (is_answerable(ex) and
                     ex["y2s"][0] - ex["y1s"][0] > ans_limit)
-
         return drop
 
     print(f"Converting {data_type} examples to indices...")
     total = 0
     total_ = 0
-    meta = {}
     context_idxs = []
     context_char_idxs = []
     ques_idxs = []
@@ -162,13 +161,13 @@ def build_features(args, examples, data_type, out_file, word2idx_dict, char2idx_
     for n, example in tqdm(enumerate(examples)):
         total_ += 1
 
-        if drop_example(example, is_test):
+        if _drop_example(example, is_test):
             continue
 
         total += 1
 
         def _get_word(word):
-            for each in (word, word.lower(), word.capitalize(), word.upper()):
+            for each in (word, word.lower(), word.capitalize(), word.upper()): # check all possible manipulations
                 if each in word2idx_dict:
                     return word2idx_dict[each]
             return 1
@@ -219,8 +218,8 @@ def build_features(args, examples, data_type, out_file, word2idx_dict, char2idx_
         y2s.append(end)
         ids.append(example["id"])
 
-    np.savez(out_file,                                      # saves .npz file
-             context_idxs=np.array(context_idxs),
+    np.savez(out_file,                                      # saves .npz file which is iterated over in train.py, test.py
+             context_idxs=np.array(context_idxs),           # this will save both dev and train
              context_char_idxs=np.array(context_char_idxs),
              ques_idxs=np.array(ques_idxs),
              ques_char_idxs=np.array(ques_char_idxs),
@@ -228,12 +227,7 @@ def build_features(args, examples, data_type, out_file, word2idx_dict, char2idx_
              y2s=np.array(y2s),
              ids=np.array(ids))
     print(f"Built {total} / {total_} instances of features in total")
-    meta["total"] = total
-    return meta
-
-
-
-
+    return {"total" : total}
 
 
 def pre_process(args):
@@ -272,7 +266,7 @@ if __name__ == '__main__':
     args_ = get_setup_args()
 
     # Download resources
-    download(args_)
+    # download(args_)
 
     # Import spacy language model
     nlp = spacy.blank("en")
@@ -282,13 +276,16 @@ if __name__ == '__main__':
     args_.dev_file = url_to_data_path(args_.dev_url)            # data/dev-v2.0.json => dev_eval.json
     if args_.include_test_examples:
         args_.test_file = url_to_data_path(args_.test_url)
+
+    # for loading glove vectors
     glove_dir = url_to_data_path(args_.glove_url.replace('.zip', ''))
     glove_ext = f'.txt' if glove_dir.endswith('d') else f'.{args_.glove_dim}d.txt'
     args_.glove_file = os.path.join(glove_dir, os.path.basename(glove_dir) + glove_ext)
 
     # Start the tree paraphraser
     if args_.use_tree_paraphraser_model:
-        print("Using setting up with tree paraphraser model")
-        # todo
+        print("Setting up with tree paraphraser model")
+        #todo: also set the replacement_node_types
+        allen_tree = AllenPredictor(min_phrase_len=args_.allen_tree_min_phrase_len)
 
     pre_process(args_)

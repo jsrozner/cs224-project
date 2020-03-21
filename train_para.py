@@ -28,12 +28,12 @@ def main(args):
     # Set up logging and devices (unchanged from train.py)
     args.save_dir = util.get_save_dir(args.save_dir, args.name, training=True)
     log = util.get_logger(args.save_dir, args.name)
-    tbx = SummaryWriter(args.save_dir)
-    device, args.gpu_ids = util.get_available_devices()
+    tbx = SummaryWriter(args.save_dir)                  # train only, not in test
+    device, args.gpu_ids = util.get_available_devices() # todo(small): should this be args (compare test_para)
     log.info(f'Args: {dumps(vars(args), indent=4, sort_keys=True)}')
     args.batch_size *= max(1, len(args.gpu_ids))        # args.py: default size is 64
 
-    # Set random seed (unchanged)
+    # Set random seed (unchanged) - train only
     log.info(f'Using random seed {args.seed}...')
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -47,8 +47,8 @@ def main(args):
     # Prepare BiDAF model (must already trained)
     log.info('Building BiDAF model (should be pretrained)')
     bidaf_model = BiDAF(word_vectors=word_vectors,          # todo: these word vectors shouldn't matter?
-                          hidden_size=args.hidden_size,     # since they will be loaded in during load_model?
-                          drop_prob=args.drop_prob)
+                          hidden_size=args.hidden_size)     # since they will be loaded in during load_model?
+                          #drop_prob=args.drop_prob)        # no drop probability since we are not training
     bidaf_model = nn.DataParallel(bidaf_model, args.gpu_ids)
 
     if not args.load_path:
@@ -57,36 +57,35 @@ def main(args):
         exit(1)
 
     log.info(f'Loading checkpoint from {args.load_path}...')
-    bidaf_model, step = util.load_model(bidaf_model, args.load_path, args.gpu_ids)
-
+    bidaf_model = util.load_model(bidaf_model, args.load_path, args.gpu_ids, return_step=False) # don't need step since we aren't training
     bidaf_model = bidaf_model.to(device)
     bidaf_model.eval()                  # we eval only (vs train)
 
     # Setup the Paraphraser model
-    ema = util.EMA(bidaf_model, args.ema_decay)
+    #ema = util.EMA(bidaf_model, args.ema_decay)
 
     # Get saver
-    saver = util.CheckpointSaver(args.save_dir,
-                                 max_checkpoints=args.max_checkpoints,
-                                 metric_name=args.metric_name,
-                                 maximize_metric=args.maximize_metric,
-                                 log=log)
+    # saver = util.CheckpointSaver(args.save_dir,
+    #                              max_checkpoints=args.max_checkpoints,
+    #                              metric_name=args.metric_name,
+    #                              maximize_metric=args.maximize_metric,
+    #                              log=log)
 
     # Get optimizer and scheduler
-    optimizer = optim.Adadelta(model.parameters(), args.lr,
-                               weight_decay=args.l2_wd)
-    scheduler = sched.LambdaLR(optimizer, lambda s: 1.)  # Constant LR
+    # optimizer = optim.Adadelta(model.parameters(), args.lr,
+    #                            weight_decay=args.l2_wd)
+    # scheduler = sched.LambdaLR(optimizer, lambda s: 1.)  # Constant LR
 
     # Get data loader
     log.info('Building dataset...')
     train_dataset = SQuAD(args.train_record_file, args.use_squad_v2)    # train.npz (from setup.py, build_features())
-    train_loader = data.DataLoader(train_dataset,
+    train_loader = data.DataLoader(train_dataset,                       # this dataloader used for all epoch iteration
                                    batch_size=args.batch_size,
                                    shuffle=True,
                                    num_workers=args.num_workers,
                                    collate_fn=collate_fn)
     dev_dataset = SQuAD(args.dev_record_file, args.use_squad_v2)        # dev.npz (same as above)
-    dev_loader = data.DataLoader(dev_dataset,
+    dev_loader = data.DataLoader(dev_dataset,                           # dev.npz used in evaluate() fcn
                                  batch_size=args.batch_size,
                                  shuffle=False,
                                  num_workers=args.num_workers,
@@ -101,7 +100,7 @@ def main(args):
         log.info(f'Starting epoch {epoch}...')
         with torch.enable_grad(), \
                 tqdm(total=len(train_loader.dataset)) as progress_bar:
-            for cw_idxs, cc_idxs, qw_idxs, qc_idxs, y1, y2, ids in train_loader:
+            for cw_idxs, cc_idxs, qw_idxs, qc_idxs, y1, y2, ids in train_loader:    # run over train dataset
                 # Setup for forward
                 cw_idxs = cw_idxs.to(device)
                 qw_idxs = qw_idxs.to(device)
@@ -138,7 +137,7 @@ def main(args):
                     # Evaluate and save checkpoint
                     log.info(f'Evaluating at step {step}...')
                     ema.assign(model)
-                    results, pred_dict = evaluate(model, dev_loader, device,
+                    results, pred_dict = evaluate(model, dev_loader, device,    # call eval with dev_loader
                                                   args.dev_eval_file,
                                                   args.max_ans_len,
                                                   args.use_squad_v2)
