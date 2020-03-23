@@ -27,35 +27,43 @@ class Paraphraser(nn.Module):
         # todo: we also need to add a do not replace vector that needs to be trained
         # initialize a gumbel softmax (or just use the nn.functional)
 
-    def forward(self, cw_idxs, qw_idxs, qw_to_phrases, rw_idxs):
+    def forward(self, q_phrase_idxs, q_phrase_types, rw_idxs):
         """
-        :param cw_idxs: The words in the context
-        :param qw_idxs: The words in the question
-        :param qw_to_phrases: breakdown of qw by spans into phrases (specifies how to replace a given word)
-        :param rw_idxs:    A matrix of phrasal replacements per phrase type, for each context.
+        :param q_phrase_idxs: (max_num_phrases_in_q, max_words_in_phrase); padded with 0s
+        :param q_phrase_types: (max_num_phrases, 1); padded with 0s; nonreplace rows also represented by 0s
+        These two params have exactly the same number of non-zero "rows"
+        Example phrase parse:
+        [['What'],
+         ['is'],
+         ['the', 'only', 'divisor'],
+         ['besides'],
+         ['1'],
+         ['that'],
+         ['a', 'prime', 'number'],
+         ['can', 'have']]
+
+        Becomes, in some word tokenization:
+       [[ 1.,  0.,  0.],
+       [11.,  0.,  0.],
+       [ 4.,  1.,  1.],
+       [ 1.,  0.,  0.],
+       [ 1.,  0.,  0.],
+       [ 1.,  0.,  0.],
+       [ 8.,  1., 32.],
+       [ 1.,  1.,  0.],
+
+        Example types:
+        [0., 3., 1., 0., 1., 0., 1., 2., 0., 0., 0.]
+
+        :param rw_idxs:    A matrix of phrasal replacements per phrase type (phrase_type, max_num_candidate_phrases, words_per_phrase)
+        Example:
+        There might be 5 phrase types, 20 candidate replacement phrases, each with 3 words per phrase
 
         :return: updated qw_idxs (i.e. a paraphrased question) -- some of the qw_idx will be replaced with
-        idxs from cw based on the replacement_idxs
         """
-        #c_len, q_len = c_mask.sum(-1), q_mask.sum(-1)
-
-
-        # add padding to rw_idxs:
-        # need to add padding for the replacement_phrases (so total possible replacements is equal)
-
-        # add padding to the qw_to_phrases matrix
-        # questions will have variable number of phrases to replace. this pads so that all
-        # questions have same number of possible phrasal replacements
-
-        # before padding:
-        # pre_pad_rw = (batch_size, num_phrase_types, num_candidate_phrases, length_replacement_phrase)
-        # last dimension is a "list" of words (word indices) for a given phrase
-
-        # after padding:
         # (batch_size, num_phrase_types, num_candidate_phrases, max_length_replacement_phrase)
         #       # for each phrase type, this is a matrix of (phrase type, set of phrasal replacements for this type)
 
-        # todo: after padding for the qw_to_phrase mapping
         # (batch_size, max_number_of_phrases_parsed_from_a_question, ....)
 
         # do embedding lookup for each of the words:
