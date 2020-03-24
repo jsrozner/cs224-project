@@ -28,9 +28,9 @@ def get_setup_args():
 
     ######
     # New modifications for paraphraser model
-    parser.add_argument('--allen_tree_min_phrase_len',
+    parser.add_argument('--allen_tree_max_phrase_len',
                         type=int,
-                        defaut=3)
+                        default=3)
     # todo: should add the set of phrase types to consider
 
 
@@ -223,6 +223,11 @@ def add_common_args(parser):
     parser.add_argument('--test_eval_file',
                         type=str,
                         default='./data/test_eval.json')
+
+    # New for paraphrasing
+    parser.add_argument('--short_test',
+                        type=bool,
+                        default=False)
 
 
 def add_train_test_args(parser):

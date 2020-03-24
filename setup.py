@@ -364,6 +364,11 @@ def save(filename, obj, message=None):
         with open(filename, "w") as fh:
             json.dump(obj, fh)
 
+def load(filename):
+    print(f'Opening {filename}')
+    with open(filename, "r") as fh:
+        return json.load(fh)
+
 
 def pre_process(args):
     # Process training set and use it to decide on the word/character vocabularies

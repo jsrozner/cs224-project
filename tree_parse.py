@@ -18,6 +18,8 @@ class AllenPredictor:
     """
     def __init__(self, min_phrase_len=3):
         archive = load_archive("./rep_allennlp/elmo-constituency-parser-2018.03.14.tar.gz")
+        print(f'The warning message about namespace pos can be safely ignored. it applies only to training,'
+              f'not uses of the model')
         self.predictor = Predictor.from_archive(archive, 'constituency-parser')
 
         self.min_phrase_len = min_phrase_len        # how many leaves when we stop
@@ -40,15 +42,17 @@ class AllenPredictor:
         output = self.predictor.predict_json(sentence)
         return Tree.fromstring(output["trees"])
 
-    # parse the tree for a question into the phrasal replacement candidates
     # Note that tree is **modified** (all leaves will have an appended "_index"
-    def sentence_to_phrases(self, sentence, include_non_matching_phrases=False) -> Tuple[List[Dict], List[Dict]]:
+    def sentence_to_phrases(self, sentence, include_non_matching_phrases=False,
+                            continue_past_valid_node=False) -> Tuple[List[Dict], List[Dict]]:
         """
         Parses a tree into the set of phrases that meet certain criteria.
         :param sentence: The input sentence (list of strings)
         :param include_non_matching_phrases: whether to insert the phrases that don't match the rules with
         label == 0 for Do Not Replace
         This should always be false when parsing a context
+        :param continue_past_valid_node: use True for context paragraph parsing - will consider phrases embedded
+        inside other phrases (e.g. a NP inside a PP)
 
         :return: tuple:
             - list of entries for each phrase, each entry: phrase, phrase_type_numeric, spans (tuple)
@@ -66,7 +70,7 @@ class AllenPredictor:
                 non_terminal[0] = non_terminal[0] + "_" + str(idx)
             return t
 
-        def _internal_traverse(t):
+        def _internal_traverse(t, continue_past_valid_node):
             for child in t:
                 if not isinstance(child, Tree):  # early fail if it's not a tree
                     return
@@ -75,20 +79,22 @@ class AllenPredictor:
                 num_leaves = len(child.leaves())
                 # If haven't met stop criterion (phrase type / length), recurse
                 if num_leaves > self.min_phrase_len or label not in self.tree_label_to_index:
-                    _internal_traverse(child)
+                    _internal_traverse(child, continue_past_valid_node)
                 else:  # valid stop (few enough leaves, and it's in the replacement list)
                     phrase = child.leaves()
                     nonlocal phrases_to_paraphrase
                     phrases_to_paraphrase += [(phrase, self.tree_label_to_index[label])]  # phrase, phrase type (numeric)
+                    if continue_past_valid_node:    # continue parsing sub-parts of the tree
+                        _internal_traverse(child, continue_past_valid_node)
 
         # Preprocessing
-        tree = allen_predictor.get_allen_tree({"sentence": sentence})
+        tree = self.get_allen_tree({"sentence": sentence})
         orig_sentence = tree.leaves()       # must do before calling the below (since tree will be modified)
 
         # Traverse the tree and extract the phrases that are candidates for replacement (paraphrasing)
         tree_with_leaf_indices = _add_indices_to_terminals(tree)   # add indices to tree roots
         phrases_to_paraphrase = []        # accumulation set from tree traversal List[(phrase, type_of_phrase_numeric)]
-        _internal_traverse(tree_with_leaf_indices)   # modifies phrases_to_paraphrase
+        _internal_traverse(tree_with_leaf_indices, continue_past_valid_node)   # modifies phrases_to_paraphrase
 
         # Do final accumulation and insert any pieces that did not match our criteria
         output_list = []                                # final accumulation (postprocess - remove the numbers)
@@ -138,7 +144,8 @@ class AllenPredictor:
         context_sentences = sent_tokenize(context_paragraph)
         phrases_for_each_sentence = []
         for idx, sent in enumerate(context_sentences):
-            phrases_for_each_sentence.append(self.sentence_to_phrases(sent, include_non_matching_phrases=False)[0])
+            phrases_for_each_sentence.append(
+                self.sentence_to_phrases(sent, include_non_matching_phrases=False, continue_past_valid_node=True)[0])
 
         start_index_for_sentence = 0
         for idx, phrase_list in enumerate(phrases_for_each_sentence):

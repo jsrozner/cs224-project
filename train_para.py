@@ -21,8 +21,10 @@ from models import BiDAF
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from ujson import load as json_load
-from util import collate_fn, SQuAD
+from util import collate_fn_para, SQuAD_paraphrase
 
+from model_para import Paraphraser
+from pprint import pprint as pp
 
 def main(args):
     # Set up logging and devices (unchanged from train.py)
@@ -51,60 +53,84 @@ def main(args):
                           #drop_prob=args.drop_prob)        # no drop probability since we are not training
     bidaf_model = nn.DataParallel(bidaf_model, args.gpu_ids)
 
-    if not args.load_path:
+    if args.short_test:
+        pass
+    elif not args.load_path:
         log.info("Trying to trian paraphraser withou bidaf model. "
                  "First train BiDAF and then specify the load path. Exiting")
         exit(1)
+    else:
+        log.info(f'Loading checkpoint from {args.load_path}...')
+        bidaf_model = util.load_model(bidaf_model, args.load_path, args.gpu_ids, return_step=False) # don't need step since we aren't training
+        bidaf_model = bidaf_model.to(device)
+        bidaf_model.eval()                  # we eval only (vs train)
 
-    log.info(f'Loading checkpoint from {args.load_path}...')
-    bidaf_model = util.load_model(bidaf_model, args.load_path, args.gpu_ids, return_step=False) # don't need step since we aren't training
-    bidaf_model = bidaf_model.to(device)
-    bidaf_model.eval()                  # we eval only (vs train)
+    # todo: Setup the Paraphraser model
+    paraphaser_model = Paraphraser(word_vectors=word_vectors,
+                                   hidden_size=args.hidden_size,
+                                   drop_prob=args.drop_prob)
 
-    # Setup the Paraphraser model
-    #ema = util.EMA(bidaf_model, args.ema_decay)
 
-    # Get saver
+    # Get data loader
+    log.info('Building dataset...')
+    # New for paraphrase: squad_paraphrase has extra fields
+    train_dataset = SQuAD_paraphrase(args.train_record_file, args.use_squad_v2)    # train.npz (from setup.py, build_features())
+    train_loader = data.DataLoader(train_dataset,                       # this dataloader used for all epoch iteration
+                                   batch_size=args.batch_size,
+                                   shuffle=True,
+                                   num_workers=args.num_workers,
+                                   collate_fn=collate_fn_para)
+    dev_dataset = SQuAD_paraphrase(args.dev_record_file, args.use_squad_v2)        # dev.npz (same as above)
+    dev_loader = data.DataLoader(dev_dataset,                           # dev.npz used in evaluate() fcn
+                                 batch_size=args.batch_size,
+                                 shuffle=False,
+                                 num_workers=args.num_workers,
+                                 collate_fn=collate_fn_para)
+
+    #Get saver
     # saver = util.CheckpointSaver(args.save_dir,
     #                              max_checkpoints=args.max_checkpoints,
     #                              metric_name=args.metric_name,
     #                              maximize_metric=args.maximize_metric,
     #                              log=log)
 
-    # Get optimizer and scheduler
-    # optimizer = optim.Adadelta(model.parameters(), args.lr,
+    #Get optimizer and scheduler
+    # ema = util.EMA(paraphaser_model, args.ema_decay)
+    # optimizer = optim.Adadelta(paraphaser_model.parameters(), args.lr,
     #                            weight_decay=args.l2_wd)
     # scheduler = sched.LambdaLR(optimizer, lambda s: 1.)  # Constant LR
-
-    # Get data loader
-    log.info('Building dataset...')
-    train_dataset = SQuAD(args.train_record_file, args.use_squad_v2)    # train.npz (from setup.py, build_features())
-    train_loader = data.DataLoader(train_dataset,                       # this dataloader used for all epoch iteration
-                                   batch_size=args.batch_size,
-                                   shuffle=True,
-                                   num_workers=args.num_workers,
-                                   collate_fn=collate_fn)
-    dev_dataset = SQuAD(args.dev_record_file, args.use_squad_v2)        # dev.npz (same as above)
-    dev_loader = data.DataLoader(dev_dataset,                           # dev.npz used in evaluate() fcn
-                                 batch_size=args.batch_size,
-                                 shuffle=False,
-                                 num_workers=args.num_workers,
-                                 collate_fn=collate_fn)
-
     # Train
+    step = 0
     log.info('Training...')
     steps_till_eval = args.eval_steps
     epoch = step // len(train_dataset)
+
+
     while epoch != args.num_epochs:
         epoch += 1
         log.info(f'Starting epoch {epoch}...')
         with torch.enable_grad(), \
                 tqdm(total=len(train_loader.dataset)) as progress_bar:
-            for cw_idxs, cc_idxs, qw_idxs, qc_idxs, y1, y2, ids in train_loader:    # run over train dataset
+            for cw_idxs, cc_idxs, qw_idxs, qc_idxs, y1, y2, cphr_idxs, qphr_idxs, qphr_types, ids in train_loader:
                 # Setup for forward
-                cw_idxs = cw_idxs.to(device)
+                # note that cc_idxs, qc_idxs are not used! (character indices)
+                cw_idxs = cw_idxs.to(device)        # todo what does this actually do
                 qw_idxs = qw_idxs.to(device)
+
+                cphr_idxs = cphr_idxs.to(device)
+                qphr_idxs = qphr_idxs.to(device)
+                qphr_types = qphr_types.to(device)
+
                 batch_size = cw_idxs.size(0)
+                if args.short_test:
+                    print(f'batch size: {batch_size}')
+                    for i, type in enumerate(cphr_idxs[0]):
+                        print(f'type: {i}')
+                        pp(type)
+                    for x in (qphr_idxs[0], qphr_types[0]):
+                        pp(x)
+                    return
+
                 optimizer.zero_grad()
 
                 # Forward

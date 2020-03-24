@@ -30,8 +30,10 @@ from codecs import open
 from collections import Counter
 from tqdm import tqdm
 
-from setup import download, url_to_data_path, word_tokenize, convert_idx, get_embedding, is_answerable, save
+from setup import url_to_data_path, word_tokenize, convert_idx, get_embedding, is_answerable, save, load
 from tree_parse import AllenPredictor
+
+from pprint import pprint as pp
 
 
 # Modified from process_file in setup.py.
@@ -64,6 +66,14 @@ def process_file(filename, data_type, word_counter, char_counter):
                 # New for tree paraphraser
                 # This is a List of lists, for each phrase type, has list of possible replacement phrases
                 context_replacement_phrases = allen_tree.context_to_replacement_phrase_sets(context)
+                # print("printing context replacement phrases")
+                # pp(context_replacement_phrases)
+                context_replacement_tokens = [[p['phrase'] for p in phrase_type] for phrase_type in context_replacement_phrases]
+                #print("printing thei representation of context")
+                #pp(context_tokens)
+
+                #print("\n\nprinting tokens")
+                #pp(context_replacement_tokens)
 
                 # Parse each of the question-answer pairs (qa)
                 for qa in para["qas"]:
@@ -78,7 +88,11 @@ def process_file(filename, data_type, word_counter, char_counter):
                             char_counter[char] += 1
 
                     # New for tree paraphraser
-                    replace_phrases, non_replace_phrases = allen_tree.parse_question_for_phrases(ques)
+                    # this is a list of dicts
+                    replace_phrases, _ = allen_tree.sentence_to_phrases(ques, include_non_matching_phrases=True)
+                    replace_phrases_tokens = [p["phrase"] for p in replace_phrases]  # (num phrases, num words in phrase)
+                    replace_phrase_types = [p["type"] for p in replace_phrases]                     # (num phrases)
+                    pp(replace_phrases_tokens)
 
                     # For each qa, we get all the answers (there are multiple)
                     y1s, y2s = [], []       # accumulate spans of all answer spans (starts and ends)
@@ -106,9 +120,9 @@ def process_file(filename, data_type, word_counter, char_counter):
                                "y1s": y1s,
                                "y2s": y2s,
                                "id": total,
-                               "context_phrases": context_replacement_phrases,
-                               "ques_phr_replace": replace_phrases,
-                               "ques_phr_no_replace": non_replace_phrases
+                               "context_phrases": context_replacement_tokens,   # List(List(List(words))); phrase type => phrases => words in phrase
+                               "ques_phrases": replace_phrases_tokens,          # List(list(words)); phrase => words in phrase
+                               "ques_phrase_types": replace_phrase_types        # List(ints); phrase => type of phrase
                                }
                     examples.append(example)
 
@@ -118,14 +132,20 @@ def process_file(filename, data_type, word_counter, char_counter):
                                                  "spans": spans,
                                                  "answers": answer_texts,
                                                  "uuid": qa["id"],
-                                                "context_phrases": context_replacement_phrases,
-                                                "ques_phr_replace": replace_phrases,
-                                                "ques_phr_no_replace": non_replace_phrases}
-                                                 #"paraphrase_id": paraphrase_id}    # new - used for baseline
+                                                 "context_phrases": context_replacement_tokens,   # List(List(List(words))); phrase type => phrases => words in phrase
+                                                 "ques_phrases": replace_phrases_tokens,          # List(list(words)); phrase => words in phrase
+                                                 "ques_phrase_types": replace_phrase_types        # List(ints); phrase => type of phrase
+                                                 }
+                                                  #"paraphrase_id": paraphrase_id}    # new - used for baseline
+
+                    # only one example if it's a short test
+                    if args_.short_test:
+                        return examples, eval_examples
+                    else:
+                        print("not short test")
+
         print(f"{len(examples)} questions in total")
     return examples, eval_examples
-
-
 
 
 def build_features(args, examples, data_type, out_file, word2idx_dict, char2idx_dict, is_test=False):
@@ -137,6 +157,8 @@ def build_features(args, examples, data_type, out_file, word2idx_dict, char2idx_
     # New for paraphraser todo
     ques_phrase_limit = ques_limit    # max num phrases in the question (potentially one for each word)
     replacement_phrase_limit = para_limit
+    max_phrase_len = args.allen_tree_max_phrase_len
+    num_phrase_types = allen_tree.num_replacement_node_types
 
     def _drop_example(ex, is_test_=False):
         if is_test_:
@@ -155,6 +177,11 @@ def build_features(args, examples, data_type, out_file, word2idx_dict, char2idx_
     context_char_idxs = []
     ques_idxs = []
     ques_char_idxs = []
+
+    context_phrase_idxs = []
+    ques_phrase_idxs = []
+    ques_phrase_types = []
+
     y1s = []
     y2s = []
     ids = []
@@ -182,6 +209,11 @@ def build_features(args, examples, data_type, out_file, word2idx_dict, char2idx_
         ques_idx = np.zeros([ques_limit], dtype=np.int32)
         ques_char_idx = np.zeros([ques_limit, char_limit], dtype=np.int32)
 
+        # new for paraphrasing (note we don't bother with characters - todo)
+        context_phrase_idx = np.zeros([num_phrase_types, replacement_phrase_limit, max_phrase_len]) # 3d
+        ques_phrase_idx = np.zeros([ques_phrase_limit, max_phrase_len])     # 2d
+        ques_phrase_type = np.zeros([ques_phrase_limit])                    # 1d
+
         # update words to their index in the embeddings
         for i, token in enumerate(example["context_tokens"]):
             context_idx[i] = _get_word(token)
@@ -192,8 +224,24 @@ def build_features(args, examples, data_type, out_file, word2idx_dict, char2idx_
             ques_idx[i] = _get_word(token)
         ques_idxs.append(ques_idx)
 
+        # new for paraphrasing
+        # update words (in phrases) to index in the embeddings
+        for i, q_phrase in enumerate(example["ques_phrases"]):      # (num phrases, words)
+            ques_phrase_type[i] = example["ques_phrase_types"][i]   # simultaneously populate types
+            for j, word in enumerate(q_phrase):
+                ques_phrase_idx[i][j] = _get_word(word)
+        ques_phrase_idxs.append(ques_phrase_idx)
+        ques_phrase_types.append(ques_phrase_type)
+
+        for i, phrase_type in enumerate(example["context_phrases"]):
+            for j, phrase in enumerate(phrase_type):
+                for k, word in enumerate(phrase):
+                    context_phrase_idx[i][j][k] = _get_word(word)
+        context_phrase_idxs.append(context_phrase_idx)
+
         # same as above but for characters
         # matrix indexed by (word, char in word)
+        # todo: we omit the paraphrases here bc this is not used
         for i, token in enumerate(example["context_chars"]):
             for j, char in enumerate(token):
                 if j == char_limit:
@@ -218,6 +266,10 @@ def build_features(args, examples, data_type, out_file, word2idx_dict, char2idx_
         y2s.append(end)
         ids.append(example["id"])
 
+        pp(ques_phrase_idxs)
+        pp(ques_phrase_types)
+        pp(context_phrase_idxs)
+
     np.savez(
         out_file,                                      # saves .npz file which is iterated over in train.py, test.py
         context_idxs=np.array(context_idxs),           # this will save both dev and train
@@ -226,6 +278,9 @@ def build_features(args, examples, data_type, out_file, word2idx_dict, char2idx_
         ques_char_idxs=np.array(ques_char_idxs),
         y1s=np.array(y1s),
         y2s=np.array(y2s),
+        context_phrase_idxs = np.array(context_phrase_idxs),    # each time: phrase types, num phrases, num words
+        ques_phrase_idxs = np.array(ques_phrase_idxs),          # each item: num phrases in ques, num words
+        ques_phrase_types = np.array(ques_phrase_types),
         ids=np.array(ids)
     )
     print(f"Built {total} / {total_} instances of features in total")
@@ -236,9 +291,18 @@ def pre_process(args):
     # Process training set and use it to decide on the word/character vocabularies
     word_counter, char_counter = Counter(), Counter()
     train_examples, train_eval = process_file(args.train_file, "train", word_counter, char_counter)
-    word_emb_mat, word2idx_dict = get_embedding(
-        word_counter, 'word', emb_file=args.glove_file, vec_size=args.glove_dim, num_vectors=args.glove_num_vecs)
-    char_emb_mat, char2idx_dict = get_embedding(char_counter, 'char', emb_file=None, vec_size=args.char_dim)
+
+    if args.short_test:
+        word_emb_mat = load(args.word_emb_file)
+        word2idx_dict = load(args.word2idx_file)
+        char2idx_dict = load(args.char2idx_file)
+        # these are not used in these models (even for the actual BiDAF)
+        #char_emb_mat = None
+        #char_emb_mat = load(args.char_emb_file, char_emb_mat)
+    else:
+        word_emb_mat, word2idx_dict = get_embedding(
+            word_counter, 'word', emb_file=args.glove_file, vec_size=args.glove_dim, num_vectors=args.glove_num_vecs)
+        char_emb_mat, char2idx_dict = get_embedding(char_counter, 'char', emb_file=None, vec_size=args.char_dim)
 
     # Process dev and test sets
     dev_examples, dev_eval = process_file(args.dev_file, "dev", word_counter, char_counter)
@@ -254,20 +318,25 @@ def pre_process(args):
                                    args.test_record_file, word2idx_dict, char2idx_dict, is_test=True)
         save(args.test_meta_file, test_meta, message="test meta")
 
+    save(args.word2idx_file, word2idx_dict, message="word dictionary")  # word2idx.json (seems not to be loaded by test)
     save(args.word_emb_file, word_emb_mat, message="word embedding")    # word_emb.json
-    save(args.char_emb_file, char_emb_mat, message="char embedding")    # char_emb.json
     save(args.train_eval_file, train_eval, message="train eval")        # train_eval.json
     save(args.dev_eval_file, dev_eval, message="dev eval")              # dev_eval.json
-    save(args.word2idx_file, word2idx_dict, message="word dictionary")  # word2idx.json (seems not to be loaded by test)
-    save(args.char2idx_file, char2idx_dict, message="char dictionary")
+
+    # these are not used in these models (even for the actual BiDAF)
+    #save(args.char_emb_file, char_emb_mat, message="char embedding")    # char_emb.json
+    #save(args.char2idx_file, char2idx_dict, message="char dictionary")
     save(args.dev_meta_file, dev_meta, message="dev meta")              # dev_meta.json (not important)
 
 
 if __name__ == '__main__':
     # Get command-line args
     args_ = get_setup_args()
+    if args_.short_test:
+        args_.include_test_examples = False
+        print(f"short test: {args_.short_test}")
 
-    # Download resources
+    # Download resources (not needed because already done)
     # download(args_)
 
     # Import spacy language model
@@ -285,9 +354,8 @@ if __name__ == '__main__':
     args_.glove_file = os.path.join(glove_dir, os.path.basename(glove_dir) + glove_ext)
 
     # Start the tree paraphraser
-    if args_.use_tree_paraphraser_model:
-        print("Setting up with tree paraphraser model")
-        #todo: also set the replacement_node_types
-        allen_tree = AllenPredictor(min_phrase_len=args_.allen_tree_min_phrase_len)
+    print("Setting up with tree paraphraser model")
+    #todo: also set the replacement_node_types
+    allen_tree = AllenPredictor(min_phrase_len=args_.allen_tree_max_phrase_len)
 
     pre_process(args_)
