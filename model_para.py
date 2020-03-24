@@ -7,7 +7,9 @@ Author:
 import layers
 import torch
 import torch.nn as nn
+from torch import Tensor
 
+from pprint import pprint as pp
 
 class Paraphraser(nn.Module):
     """
@@ -27,7 +29,7 @@ class Paraphraser(nn.Module):
         # todo: we also need to add a do not replace vector that needs to be trained
         # initialize a gumbel softmax (or just use the nn.functional)
 
-    def forward(self, q_phrase_idxs, q_phrase_types, rw_idxs):
+    def forward(self, q_phrase_idxs : Tensor, q_phrase_types, rw_idxs) -> Tensor:
         """
         :param q_phrase_idxs: (max_num_phrases_in_q, max_words_in_phrase); padded with 0s
         :param q_phrase_types: (max_num_phrases, 1); padded with 0s; nonreplace rows also represented by 0s
@@ -61,18 +63,50 @@ class Paraphraser(nn.Module):
 
         :return: updated qw_idxs (i.e. a paraphrased question) -- some of the qw_idx will be replaced with
         """
+
         # (batch_size, num_phrase_types, num_candidate_phrases, max_length_replacement_phrase)
         #       # for each phrase type, this is a matrix of (phrase type, set of phrasal replacements for this type)
 
         # (batch_size, max_number_of_phrases_parsed_from_a_question, ....)
+        print("running inside paraphrase model")
+        batch_size = q_phrase_idxs.shape[0]
+        print(f"batch size {batch_size}")
+
+        # todo: temp mod
+        #q_phrase_idxs = q_phrase_idxs[0]
+        pp(q_phrase_idxs)
+
+        # (batch, num_phrases, num_words)
 
         # do embedding lookup for each of the words:
-        # (batch_size, num_phrase_types, num_candidate_phrases, max_words_in_replacement_phrase, embedding_hidden_size)
+        q_phrase_emb = self.emb(q_phrase_idxs)                      # (batch, num_phrases, num_words, emb)
+        pp(q_phrase_emb.shape)
 
         # take a vector average (over all words in the phrase - over the max_words_in_replacement_dim)
         # don't count pads
-        # (batch_size, num_phrase_types, num_candidate_phrases, embedding_hidden_size)
+        # (batch, num_phrases, num_words) =>
+        q_phrase_lens = (q_phrase_idxs != 0).sum(-1).float()        # non-zero words each phrase: (batch, num_phrases)
+        q_phrase_sums = q_phrase_emb.sum(2)                         # vector sum: (batch, num_phrases, emb)
+        q_phrase_vectors = (1/q_phrase_lens).unsqueeze(2) * q_phrase_sums     # (batch, num_phrases, emb)
 
+        pp(q_phrase_lens)
+        pp(q_phrase_sums)
+        pp(q_phrase_vectors)
+
+        # same for context phrases
+        rw_phrase_lens = (rw_idxs != 0).sum(-1).float()      # (batch, num_types, num_phrases)
+        rw_phrase_emb = self.emb(rw_idxs)                    # (batch, num_types, num_phrases, num_words, emb)
+        rw_phrase_sums = rw_phrase_emb.sum(3)               # (batch, num_types, num_phrases, emb)
+        rw_phrase_vectors = (1/rw_phrase_lens).unsqueeze(3) * rw_phrase_sums  # (batch, num_types, num_phrases, emb)
+
+        pp(rw_idxs)
+        pp(rw_phrase_lens)
+        pp(rw_phrase_sums)
+        pp(rw_phrase_vectors)
+
+
+        # todo: we have 0 length phrases and are dividing by 0 so we get nan and infs
+        
         # append the do not replace (DNR) token for each phrase type
         # (batch_size, num_phrase_types, num_candidate_phrases + 1, embedding_hidden_size)
 
@@ -107,6 +141,9 @@ class Paraphraser(nn.Module):
         # c_emb = self.emb(cw_idxs)         # (batch_size, c_len, hidden_size)
         # q_emb = self.emb(qw_idxs)         # (batch_size, q_len, hidden_size)
         # r_emb = self.emb(rw_idxs)
+
+        batch_size = q_phrase_idxs.shape[0]
+        return q_phrase_idxs.reshape((batch_size, -1))
 
 
     # todo: implement an annealing function that changes the tau for the model, as we progress

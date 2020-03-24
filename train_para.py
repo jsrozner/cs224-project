@@ -25,6 +25,7 @@ from util import collate_fn_para, SQuAD_paraphrase
 
 from model_para import Paraphraser
 from pprint import pprint as pp
+from setup import load
 
 def main(args):
     # Set up logging and devices (unchanged from train.py)
@@ -54,7 +55,7 @@ def main(args):
     bidaf_model = nn.DataParallel(bidaf_model, args.gpu_ids)
 
     if args.short_test:
-        pass
+        args.hidden_size = 5
     elif not args.load_path:
         log.info("Trying to trian paraphraser withou bidaf model. "
                  "First train BiDAF and then specify the load path. Exiting")
@@ -86,6 +87,9 @@ def main(args):
                                  shuffle=False,
                                  num_workers=args.num_workers,
                                  collate_fn=collate_fn_para)
+
+    # todo: this is just for looking at the paraphrases
+    idx2word_dict = load(args.idx2word_file)
 
     #Get saver
     # saver = util.CheckpointSaver(args.save_dir,
@@ -122,13 +126,24 @@ def main(args):
                 qphr_types = qphr_types.to(device)
 
                 batch_size = cw_idxs.size(0)
+                # if args.short_test:
+                #     print(f'batch size: {batch_size}')
+                #     for i, type in enumerate(cphr_idxs[0]):
+                #         print(f'type: {i}')
+                #         pp(type)
+                #     for x in (qphr_idxs[0], qphr_types[0]):
+                #         pp(x)
+                #     return
+
+                paraphrased = paraphaser_model(qphr_idxs, qphr_types, cphr_idxs)
+                for idx, p in enumerate(paraphrased):   # enumerate over batch_size
+                    non_zeros = p[p.nonzero()].squeeze()
+                    #paraphrased[idx] = non_zeros
+                    sentence_as_list = [idx2word_dict[str(w.item())] for w in non_zeros]
+                    pp(" ".join(sentence_as_list))
+                    #pp([idx2word_dict[w] for w in non_zeros])
+
                 if args.short_test:
-                    print(f'batch size: {batch_size}')
-                    for i, type in enumerate(cphr_idxs[0]):
-                        print(f'type: {i}')
-                        pp(type)
-                    for x in (qphr_idxs[0], qphr_types[0]):
-                        pp(x)
                     return
 
                 optimizer.zero_grad()

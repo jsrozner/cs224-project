@@ -318,11 +318,15 @@ def pre_process(args):
                                    args.test_record_file, word2idx_dict, char2idx_dict, is_test=True)
         save(args.test_meta_file, test_meta, message="test meta")
 
+
     save(args.word2idx_file, word2idx_dict, message="word dictionary")  # word2idx.json (seems not to be loaded by test)
     save(args.word_emb_file, word_emb_mat, message="word embedding")    # word_emb.json
     save(args.train_eval_file, train_eval, message="train eval")        # train_eval.json
     save(args.dev_eval_file, dev_eval, message="dev eval")              # dev_eval.json
 
+    # new for paraphrase reverse lookup
+    idx2word_dict = {value:key for key,value in word2idx_dict.items()}
+    save(args.idx2word_file, idx2word_dict, message="NEW idx to word dictionary")
     # these are not used in these models (even for the actual BiDAF)
     #save(args.char_emb_file, char_emb_mat, message="char embedding")    # char_emb.json
     #save(args.char2idx_file, char2idx_dict, message="char dictionary")

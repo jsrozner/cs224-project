@@ -228,6 +228,9 @@ def add_common_args(parser):
     parser.add_argument('--short_test',
                         type=bool,
                         default=False)
+    parser.add_argument('--idx2word_file',
+                        type=str,
+                        default='./data/idx2word.json')
 
 
 def add_train_test_args(parser):

@@ -57,15 +57,17 @@ def main(args):
 
     # Get data loader
 
-    a = np.array([5, 1, 3, 4],
-                 [4, 2, 1])
+    a = np.array([[5, 0, 3, 0],
+                 [4, 0, 1, 0]])
     c_idx = torch.from_numpy(a).long()
+
+    pp(c_idx[c_idx.nonzero()])
     #c_mask = torch.zeros_like(c_idx) != c_idx
-    embeddings = bidaf_model.emb(c_idx)
+    #embeddings = bidaf_model.emb(c_idx)
     #c_len = c_mask.sum(-1)
     #print(f'c_len = {c_len}')
     #pp(c_idx)
-    pp(embeddings)
+    #pp(embeddings)
 
 
 

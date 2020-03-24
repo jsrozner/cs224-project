@@ -363,6 +363,8 @@ def save(filename, obj, message=None):
         print(f"Saving {message}...")
         with open(filename, "w") as fh:
             json.dump(obj, fh)
+    else:
+        print(f"No message for {filename} NOT SAVING")
 
 def load(filename):
     print(f'Opening {filename}')
