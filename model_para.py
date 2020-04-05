@@ -106,7 +106,8 @@ class Paraphraser(nn.Module):
 
 
         # todo: we have 0 length phrases and are dividing by 0 so we get nan and infs
-        
+        #   - consider using a mask or substituting so that we don't end up dividing by 0
+
         # append the do not replace (DNR) token for each phrase type
         # (batch_size, num_phrase_types, num_candidate_phrases + 1, embedding_hidden_size)
 
