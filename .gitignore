@@ -10,4 +10,5 @@ save_from_vm/
 
 ppdb-2.0-tldr
 *.txt
+!overview.txt
 

@@ -1,0 +1,49 @@
+RUNNING
+python setup.py
+python setup_para.py short_test True
+python train_para.py short_test True --name <insert name>
+
+
+
+
+Flow:
+1) Setup
+- process_file Opens json files, parses into examples, eval_examples
+- build_features -> tokenizes, all arrays have specific padding outputs npz
+
+2) train
+- reads in npz
+- calls data loader, which turns npz into an iterable, also does batch padding (redundant?)
+- eval function prints out comparisons
+
+NOTES
+- don't replace -> used padding = DNR
+- cosine sim needs to be 0-> 1, not -1 to 1
+- consider one phrase t a time
+
+TEMPORARY MODS
+- args.short_test
+
+TOP LEVEL
+- gather / unsqueeze in model_para
+- annealing
+
+TODOS (must)
+- test_para.py should mimic train_para mods
+- squad V2 - see how util.py handles this
+
+
+TODOS (checks)
+- should we print the paraphrases based on word index lookup or based on span joins? (in train_para)
+- get a mapping for all the diff phrase types
+- count the phrase types we are not handling in setup_para.py
+- is the tree_parse tokenize okay (e.g. punctuation, possessives, etc)
+    - dedupe capitalization?
+- is the context being correctly parsed - do we get all of the subnodes
+
+
+OTHER
+- fuzzy matching
+
+TO READ
+- util.py, discretize
